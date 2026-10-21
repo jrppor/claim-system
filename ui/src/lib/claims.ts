@@ -55,6 +55,37 @@ export interface ClaimDetail {
   damageDescription: string | null;
   createdAt: string;
   updatedAt: string;
+  /** What the Insurance Adjuster approved; null until approved. Separate from any Estimated Amount. */
+  approvedAmount: number | null;
+  approvedEstimateId: number | null;
+}
+
+export type ReviewAction = "pickup" | "approve" | "reject" | "requestChanges";
+
+/**
+ * Review actions an Insurance Adjuster may take, from role and status (mirrors ClaimLifecycle):
+ * Submitted can be picked up; UnderReview can be approved, rejected or sent back for changes. Nothing else.
+ */
+export function availableReviewActions(role: string | undefined, status: ClaimStatus): ReviewAction[] {
+  if (role !== "InsuranceAdjuster") return [];
+  if (status === "Submitted") return ["pickup"];
+  if (status === "UnderReview") return ["approve", "reject", "requestChanges"];
+  return [];
+}
+
+/** Thai message for a failed review action. */
+export function describeReviewError(error: unknown): string {
+  if (error instanceof ProxyError) {
+    if (error.status === 400) {
+      const fields = Object.keys(error.problem?.errors ?? {});
+      if (fields.includes("approvedAmount")) return "ยอดอนุมัติต้องมากกว่า 0 และไม่เกินวงเงินคุ้มครอง";
+      return "กรุณากรอกเหตุผลหรือความเห็นให้ครบ";
+    }
+    if (error.status === 409) return "ทำรายการไม่ได้ สถานะหรือใบประเมินฉบับล่าสุดของเคลมนี้เปลี่ยนไปแล้ว กรุณารีเฟรชหน้า";
+    if (error.status === 403) return "คุณไม่มีสิทธิ์ทำรายการนี้";
+    if (error.status === 404) return "ไม่พบเคลมนี้";
+  }
+  return "ทำรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
 }
 
 /** One line of Claim History: who moved the Claim between which statuses, when and why. */

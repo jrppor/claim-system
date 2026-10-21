@@ -21,6 +21,7 @@ import {
   type ClaimHistoryEntry,
 } from "@/lib/claims";
 import { RepairEstimateSection } from "@/components/RepairEstimateSection";
+import { ReviewActions } from "@/components/ReviewActions";
 import { useSession } from "@/lib/useSession";
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
@@ -86,8 +87,9 @@ export default function ClaimDetailPage() {
             ส่งเคลม
           </Button>
         )}
+        <ReviewActions claim={c} role={user?.role} />
       </Stack>
-      {submit.isError && <Alert severity="error">{describeStatusChangeError(submit.error)}</Alert>}
+      {submit.isError &&<Alert severity="error">{describeStatusChangeError(submit.error)}</Alert>}
 
       <Card>
         <CardContent>
@@ -99,6 +101,9 @@ export default function ClaimDetailPage() {
             <Field label="วงเงินคุ้มครอง (บาท)" value={c.policy.coverageLimit.toLocaleString("th-TH")} />
             <Field label="ชื่อลูกค้า" value={c.policy.customer.fullName} />
             <Field label="อีเมลลูกค้าในเคลม" value={c.customerEmail} />
+            {c.approvedAmount !== null && (
+              <Field label="ยอดอนุมัติ (Approved Amount) บาท" value={c.approvedAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })} />
+            )}
           </Grid>
         </CardContent>
       </Card>

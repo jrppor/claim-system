@@ -95,8 +95,12 @@ public sealed class SqlUnitOfWork(string connectionString) : IUnitOfWork
         SqlConnection conn, SqlTransaction tx, ClaimEntity claim, ClaimHistoryEntry entry, EmailMessage? email, CancellationToken ct)
     {
         await conn.ExecuteAsync(new CommandDefinition(
-            "UPDATE dbo.Claims SET Status = @Status, UpdatedAt = @UpdatedAt WHERE Id = @Id",
-            new { claim.Id, Status = claim.Status.ToString(), claim.UpdatedAt }, tx, cancellationToken: ct));
+            """
+            UPDATE dbo.Claims
+            SET Status = @Status, UpdatedAt = @UpdatedAt, ApprovedAmount = @ApprovedAmount, ApprovedRepairEstimateId = @ApprovedEstimateId
+            WHERE Id = @Id
+            """,
+            new { claim.Id, Status = claim.Status.ToString(), claim.UpdatedAt, claim.ApprovedAmount, claim.ApprovedEstimateId }, tx, cancellationToken: ct));
 
         await conn.ExecuteAsync(new CommandDefinition(
             """

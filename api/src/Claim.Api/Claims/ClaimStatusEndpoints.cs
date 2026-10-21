@@ -28,6 +28,44 @@ public static class ClaimStatusEndpoints
             }
         }).RequireAuthorization(AuthPolicies.GarageStaff);
 
+        claims.MapPost("/{id:long}/review", async (long id, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
+        {
+            try
+            {
+                var claim = await workflow.StartReviewAsync(id, long.Parse(http.User.FindFirst("sub")!.Value), http.User.FindFirst("role")!.Value, ct);
+                return claim is null ? NotFound(id) : Results.Ok(claim);
+            }
+            catch (ClaimRuleException ex)
+            {
+                return InvalidTransition(ex);
+            }
+        }).RequireAuthorization(AuthPolicies.InsuranceAdjuster);
+
+        claims.MapPost("/{id:long}/approve", async (long id, ApproveInput input, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
+        {
+            try
+            {
+                var claim = await workflow.ApproveAsync(id, input, long.Parse(http.User.FindFirst("sub")!.Value), http.User.FindFirst("role")!.Value, ct);
+                return claim is null ? NotFound(id) : Results.Ok(claim);
+            }
+            catch (ClaimValidationException ex)
+            {
+                return Results.ValidationProblem(ex.Errors.ToDictionary(e => e.Key, e => e.Value));
+            }
+            catch (ClaimRuleException ex)
+            {
+                return InvalidTransition(ex);
+            }
+        }).RequireAuthorization(AuthPolicies.InsuranceAdjuster);
+
+        claims.MapPost("/{id:long}/request-changes", async (long id, RequestChangesRequest body, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
+            await Decide(id, http, ct, (actor, role) => workflow.RequestChangesAsync(id, body.Comments, actor, role, ct)))
+            .RequireAuthorization(AuthPolicies.InsuranceAdjuster);
+
+        claims.MapPost("/{id:long}/reject", async (long id, StatusChangeRequest body, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
+            await Decide(id, http, ct, (actor, role) => workflow.RejectAsync(id, body.Reason, actor, role, ct)))
+            .RequireAuthorization(AuthPolicies.InsuranceAdjuster);
+
         claims.MapPost("/{id:long}/estimates", async (long id, EstimateInput input, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
         {
             try
@@ -56,6 +94,25 @@ public static class ClaimStatusEndpoints
             var history = await workflow.GetHistoryAsync(id, http.User.FindFirst("role")!.Value, ct);
             return history is null ? NotFound(id) : Results.Ok(history);
         }).RequireAuthorization();
+    }
+
+    public sealed record RequestChangesRequest(string? Comments);
+
+    private static async Task<IResult> Decide(long id, HttpContext http, CancellationToken ct, Func<long, string, Task<ClaimDto?>> action)
+    {
+        try
+        {
+            var claim = await action(long.Parse(http.User.FindFirst("sub")!.Value), http.User.FindFirst("role")!.Value);
+            return claim is null ? NotFound(id) : Results.Ok(claim);
+        }
+        catch (ClaimValidationException ex)
+        {
+            return Results.ValidationProblem(ex.Errors.ToDictionary(e => e.Key, e => e.Value));
+        }
+        catch (ClaimRuleException ex)
+        {
+            return InvalidTransition(ex);
+        }
     }
 
     /// <summary>Optional body of a status-change call; the reason goes to Claim History and into the Customer email.</summary>

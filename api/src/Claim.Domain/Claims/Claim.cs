@@ -37,6 +37,12 @@ public sealed class Claim
     public DateTime CreatedAt { get; init; }
     public DateTime UpdatedAt { get; private set; }
 
+    /// <summary>What the Insurance Adjuster approved to pay. Stored apart from any Estimated Amount; null until the Claim is approved.</summary>
+    public decimal? ApprovedAmount { get; private set; }
+
+    /// <summary>The Repair Estimate revision that was the latest (the one under review) when the Claim was approved.</summary>
+    public long? ApprovedEstimateId { get; private set; }
+
     /// <summary>Optimistic-concurrency token (SQL rowversion). Enforced in a later ticket.</summary>
     public byte[] RowVersion { get; set; } = [];
 
@@ -96,6 +102,27 @@ public sealed class Claim
         Status = to;
         UpdatedAt = now;
         return entry;
+    }
+
+    /// <summary>
+    /// UnderReview → Approved. The Approved Amount must be positive and within the Policy's Coverage Limit; it may be below the
+    /// Estimated Amount. The approval is tied to the given (latest) Repair Estimate revision.
+    /// </summary>
+    public ClaimHistoryEntry Approve(decimal approvedAmount, decimal coverageLimit, long estimateId, long actorUserId, string reason, DateTime now)
+    {
+        if (approvedAmount <= 0 || approvedAmount > coverageLimit)
+            throw new ClaimRuleException($"Approved Amount must be greater than 0 and at most the Coverage Limit {coverageLimit:0.00}.");
+        var entry = ChangeStatus(ClaimStatus.Approved, actorUserId, reason, now);
+        ApprovedAmount = approvedAmount;
+        ApprovedEstimateId = estimateId;
+        return entry;
+    }
+
+    /// <summary>Reloads a stored approval when the Claim is read back from the database.</summary>
+    public void RestoreApproval(decimal approvedAmount, long estimateId)
+    {
+        ApprovedAmount = approvedAmount;
+        ApprovedEstimateId = estimateId;
     }
 
     /// <summary>An Insurance Adjuster never sees a Draft; Garage Staff and Admin see every Claim.</summary>

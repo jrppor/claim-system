@@ -24,7 +24,9 @@ public sealed record ClaimDto(
     string? CustomerEmail,
     string? DamageDescription,
     DateTime CreatedAt,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    decimal? ApprovedAmount = null,
+    long? ApprovedEstimateId = null);
 
 public sealed class ClaimValidationException(IReadOnlyDictionary<string, string[]> errors) : Exception("Claim input is invalid.")
 {
@@ -96,5 +98,5 @@ public sealed class ClaimService(IClaimRepository claims, IPolicyRepository poli
     private static ClaimDto ToDto(ClaimEntity c, Policy policy) => new(
         c.Id, c.ClaimNumber, c.Status.ToString(), policy,
         c.Details.VehiclePlate, c.Details.VehicleMake, c.Details.VehicleModel,
-        c.Details.CustomerEmail, c.Details.DamageDescription, c.CreatedAt, c.UpdatedAt);
+        c.Details.CustomerEmail, c.Details.DamageDescription, c.CreatedAt, c.UpdatedAt, c.ApprovedAmount, c.ApprovedEstimateId);
 }

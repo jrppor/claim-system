@@ -8,6 +8,9 @@ public interface IRepairEstimateRepository
     Task<IReadOnlyList<RepairEstimate>> ListAsync(long claimId, CancellationToken ct);
 }
 
+/// <summary>An Insurance Adjuster's approval. Revision is optional; when given it must be the latest Repair Estimate revision.</summary>
+public sealed record ApproveInput(decimal? ApprovedAmount, string? Reason, int? Revision);
+
 public sealed record EstimateLineInput(string? Kind, string? Description, decimal? Quantity, decimal? UnitPrice);
 
 /// <summary>Input of a Repair Estimate. There is deliberately no amount: the Estimated Amount is computed from the lines.</summary>
