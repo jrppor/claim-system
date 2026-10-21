@@ -41,7 +41,7 @@ $scripts = Get-ChildItem -Path $PSScriptRoot -Filter '*.sql' |
 if (-not $scripts) { throw "No NNN_*.sql scripts found in $PSScriptRoot" }
 foreach ($script in $scripts) {
     Write-Host "Running $($script.Name)"
-    $text = Get-Content -Path $script.FullName -Raw
+    $text = Get-Content -Path $script.FullName -Raw -Encoding UTF8
     # Split on GO batch separators (a line containing only GO).
     $batches = [regex]::Split($text, '(?im)^\s*GO\s*$') | Where-Object { $_.Trim() }
     foreach ($batch in $batches) { Invoke-Sql $Database $batch }

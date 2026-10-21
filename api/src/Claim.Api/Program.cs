@@ -1,3 +1,4 @@
+using Claim.Api.Auth;
 using Claim.Application;
 using Claim.Application.Health;
 using Claim.Infrastructure;
@@ -13,7 +14,17 @@ builder.Services.AddApplication(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddClaimAuth(builder.Configuration);
+builder.Services.AddSwaggerGen(o =>
+{
+    o.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.OpenApiSecurityScheme
+    {
+        Type = Microsoft.OpenApi.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = "Paste the accessToken returned by POST /auth/login.",
+    });
+});
 
 var app = builder.Build();
 
@@ -34,6 +45,9 @@ app.UseExceptionHandler(errors => errors.Run(async ctx =>
 }));
 app.UseStatusCodePages();
 app.UseSerilogRequestLogging();
+app.UseCors(AuthSetup.CorsPolicy);
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.UseSwagger();
 app.UseSwaggerUI();
@@ -47,6 +61,8 @@ app.MapGet("/health", async (HealthService health, CancellationToken ct) =>
 })
 .WithName("Health")
 .WithTags("System");
+
+app.MapAuthEndpoints();
 
 app.Run();
 
