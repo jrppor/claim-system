@@ -15,6 +15,8 @@ public static class DependencyInjection
             ?? throw new InvalidOperationException("ConnectionStrings:Claim is not configured.");
         services.AddSingleton<IDatabaseProbe>(new SqlDatabaseProbe(cs));
         services.AddSingleton<IUserRepository>(new SqlUserRepository(cs));
+        services.AddSingleton<Application.Claims.IPolicyRepository>(new Claims.SqlPolicyRepository(cs));
+        services.AddSingleton<Application.Claims.IClaimRepository>(new Claims.SqlClaimRepository(cs));
 
         // Connect lazily so the API starts (and tests run) without Redis.
         var redisConfig = config["Redis:Configuration"] ?? "localhost:6379";

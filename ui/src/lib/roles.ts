@@ -30,7 +30,10 @@ export interface RouteRule {
  * Role-restricted pages. Any signed-in user may open a path that matches no rule.
  * Later tickets add their pages here (the API remains the real enforcement point).
  */
-export const routeRules: readonly RouteRule[] = [{ prefix: "/users", roles: ["Admin"] }];
+export const routeRules: readonly RouteRule[] = [
+  { prefix: "/users", roles: ["Admin"] },
+  { prefix: "/claims/new", roles: ["GarageStaff"] },
+];
 
 export function pathMatches(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(prefix + "/");

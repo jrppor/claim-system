@@ -2,6 +2,7 @@ using Claim.Application.Auth;
 using Claim.Application.Health;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Claim.Application;
 
@@ -14,6 +15,9 @@ public static class DependencyInjection
         services.AddScoped<HealthService>();
         services.AddScoped<AuthService>();
         services.AddScoped<UserService>();
+        services.AddScoped<Claims.PolicyService>();
+        services.AddScoped<Claims.ClaimService>();
+        services.TryAddSingleton(TimeProvider.System);
         return services;
     }
 }

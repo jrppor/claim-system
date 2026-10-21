@@ -82,6 +82,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     public FakeDatabaseProbe Database { get; } = new();
     public FakeUserRepository Users { get; } = new();
     public FakeRefreshTokenStore RefreshTokens { get; } = new();
+    public FakePolicyRepository Policies { get; } = new();
+    public FakeClaimRepository Claims { get; } = new();
 
     public ApiFactory()
     {
@@ -102,6 +104,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             services.AddSingleton<IUserRepository>(Users);
             services.RemoveAll<IRefreshTokenStore>();
             services.AddSingleton<IRefreshTokenStore>(RefreshTokens);
+            services.ReplaceClaimRepositories(Policies, Claims);
         });
     }
 }
