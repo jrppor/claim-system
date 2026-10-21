@@ -21,6 +21,7 @@ import {
   type ClaimHistoryEntry,
 } from "@/lib/claims";
 import { RepairEstimateSection } from "@/components/RepairEstimateSection";
+import { CancelClaimAction } from "@/components/CancelClaimAction";
 import { ReviewActions } from "@/components/ReviewActions";
 import { useSession } from "@/lib/useSession";
 
@@ -88,6 +89,7 @@ export default function ClaimDetailPage() {
           </Button>
         )}
         <ReviewActions claim={c} role={user?.role} />
+        <CancelClaimAction claim={c} role={user?.role} />
       </Stack>
       {submit.isError &&<Alert severity="error">{describeStatusChangeError(submit.error)}</Alert>}
 
