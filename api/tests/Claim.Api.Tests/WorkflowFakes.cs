@@ -84,8 +84,41 @@ public sealed class FakeEmailSender : IEmailSender
     }
 }
 
-public sealed class FakeUnitOfWork(FakeClaimRepository claims, FakeClaimHistoryRepository history, FakeEmailOutbox outbox) : IUnitOfWork
+/// <summary>In-memory Repair Estimates. Also what the fake Unit of Work appends to.</summary>
+public sealed class FakeRepairEstimateRepository : IRepairEstimateRepository
 {
+    private readonly List<RepairEstimate> _estimates = [];
+    private readonly object _lock = new();
+
+    public IReadOnlyList<RepairEstimate> All { get { lock (_lock) return _estimates.ToList(); } }
+
+    public RepairEstimate Append(RepairEstimate estimate)
+    {
+        lock (_lock)
+        {
+            var revision = _estimates.Where(e => e.ClaimId == estimate.ClaimId).Select(e => e.Revision).DefaultIfEmpty(0).Max() + 1;
+            var stored = estimate.Stored(_estimates.Count + 1, revision);
+            _estimates.Add(stored);
+            return stored;
+        }
+    }
+
+    public Task<IReadOnlyList<RepairEstimate>> ListAsync(long claimId, CancellationToken ct)
+    {
+        lock (_lock) return Task.FromResult<IReadOnlyList<RepairEstimate>>(_estimates.Where(e => e.ClaimId == claimId).OrderBy(e => e.Revision).ToList());
+    }
+}
+
+public sealed class FakeUnitOfWork(
+    FakeClaimRepository claims, FakeClaimHistoryRepository history, FakeEmailOutbox outbox, FakeRepairEstimateRepository estimates) : IUnitOfWork
+{
+    public async Task<RepairEstimate> RecordEstimateAsync(
+        RepairEstimate estimate, Domain.Claims.Claim? claim, ClaimHistoryEntry? entry, EmailMessage? email, CancellationToken ct)
+    {
+        if (claim is not null && entry is not null) await RecordStatusChangeAsync(claim, entry, email, ct);
+        return estimates.Append(estimate);
+    }
+
     public async Task RecordStatusChangeAsync(Domain.Claims.Claim claim, ClaimHistoryEntry entry, EmailMessage? email, CancellationToken ct)
     {
         await claims.UpdateAsync(claim, ct);
@@ -97,8 +130,10 @@ public sealed class FakeUnitOfWork(FakeClaimRepository claims, FakeClaimHistoryR
 public static class WorkflowFakeRegistration
 {
     public static IServiceCollection ReplaceWorkflowStores(
-        this IServiceCollection services, FakeClaimHistoryRepository history, FakeUnitOfWork unitOfWork, FakeEmailOutbox outbox, FakeEmailSender sender)
+        this IServiceCollection services, FakeClaimHistoryRepository history, FakeUnitOfWork unitOfWork, FakeEmailOutbox outbox, FakeEmailSender sender, FakeRepairEstimateRepository estimates)
     {
+        services.RemoveAll<IRepairEstimateRepository>();
+        services.AddSingleton<IRepairEstimateRepository>(estimates);
         services.RemoveAll<IClaimHistoryRepository>();
         services.AddSingleton<IClaimHistoryRepository>(history);
         services.RemoveAll<IEmailSender>();

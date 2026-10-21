@@ -20,6 +20,7 @@ import {
   type ClaimDetail,
   type ClaimHistoryEntry,
 } from "@/lib/claims";
+import { RepairEstimateSection } from "@/components/RepairEstimateSection";
 import { useSession } from "@/lib/useSession";
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
@@ -121,6 +122,8 @@ export default function ClaimDetailPage() {
           </Grid>
         </CardContent>
       </Card>
+
+      <RepairEstimateSection claim={c} role={user?.role} />
 
       <Card>
         <CardContent>

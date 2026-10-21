@@ -26,6 +26,13 @@ public static class ClaimLifecycle
 
     public static bool CanMove(ClaimStatus from, ClaimStatus to) => Allowed[from].Contains(to);
 
+    /// <summary>
+    /// A Repair Estimate revision may be submitted while the Adjuster has not decided yet and is waiting on the garage:
+    /// Submitted (first estimate) or ChangesRequested (revision). Not in Draft (the Claim is not submitted yet),
+    /// not UnderReview (an Adjuster is reading the latest revision) and not once the Claim is decided or closed.
+    /// </summary>
+    public static bool AcceptsEstimate(ClaimStatus status) => status is ClaimStatus.Submitted or ClaimStatus.ChangesRequested;
+
     public static IReadOnlyList<ClaimStatus> NextStatuses(ClaimStatus from) => Allowed[from];
 }
 

@@ -9,6 +9,13 @@ namespace Claim.Application.Claims;
 public interface IUnitOfWork
 {
     Task RecordStatusChangeAsync(Domain.Claims.Claim claim, ClaimHistoryEntry entry, EmailMessage? email, CancellationToken ct);
+
+    /// <summary>
+    /// Stores a new Repair Estimate revision (the store assigns its number: previous latest + 1; earlier revisions are never touched).
+    /// When the submission also moves the Claim, the new status, History line and email commit in the same transaction.
+    /// </summary>
+    Task<RepairEstimate> RecordEstimateAsync(
+        RepairEstimate estimate, Domain.Claims.Claim? claim, ClaimHistoryEntry? entry, EmailMessage? email, CancellationToken ct);
 }
 
 public interface IClaimHistoryRepository

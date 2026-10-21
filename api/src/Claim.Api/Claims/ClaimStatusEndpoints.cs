@@ -28,6 +28,29 @@ public static class ClaimStatusEndpoints
             }
         }).RequireAuthorization(AuthPolicies.GarageStaff);
 
+        claims.MapPost("/{id:long}/estimates", async (long id, EstimateInput input, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
+        {
+            try
+            {
+                var estimate = await workflow.SubmitEstimateAsync(id, input, long.Parse(http.User.FindFirst("sub")!.Value), ct);
+                return estimate is null ? NotFound(id) : Results.Created($"/claims/{id}/estimates", estimate);
+            }
+            catch (ClaimValidationException ex)
+            {
+                return Results.ValidationProblem(ex.Errors.ToDictionary(e => e.Key, e => e.Value));
+            }
+            catch (ClaimRuleException ex)
+            {
+                return InvalidTransition(ex);
+            }
+        }).RequireAuthorization(AuthPolicies.GarageStaff);
+
+        claims.MapGet("/{id:long}/estimates", async (long id, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
+        {
+            var revisions = await workflow.GetEstimatesAsync(id, http.User.FindFirst("role")!.Value, ct);
+            return revisions is null ? NotFound(id) : Results.Ok(revisions);
+        }).RequireAuthorization();
+
         claims.MapGet("/{id:long}/history", async (long id, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
         {
             var history = await workflow.GetHistoryAsync(id, http.User.FindFirst("role")!.Value, ct);
