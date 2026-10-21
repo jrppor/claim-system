@@ -47,10 +47,6 @@ public static class AuthEndpoints
             var user = long.TryParse(sub, out var id) ? await service.GetUserAsync(id, ct) : null;
             return user is null ? Results.Unauthorized() : Results.Ok(user);
         }).RequireAuthorization();
-
-        app.MapGet("/users", async (UserService users, CancellationToken ct) => Results.Ok(await users.ListAsync(ct)))
-            .WithTags("Users")
-            .RequireAuthorization(AuthPolicies.Admin);
     }
 
     private static IResult InvalidCredentials() =>
