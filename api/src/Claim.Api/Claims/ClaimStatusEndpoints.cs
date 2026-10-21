@@ -66,6 +66,10 @@ public static class ClaimStatusEndpoints
             await Decide(id, http, ct, (actor, role) => workflow.RejectAsync(id, body.Reason, actor, role, ct)))
             .RequireAuthorization(AuthPolicies.InsuranceAdjuster);
 
+        claims.MapPost("/{id:long}/cancel", async (long id, StatusChangeRequest body, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
+            await Decide(id, http, ct, (actor, role) => workflow.CancelAsync(id, body.Reason, actor, role, ct)))
+            .RequireAuthorization(AuthPolicies.GarageStaff);
+
         claims.MapPost("/{id:long}/estimates", async (long id, EstimateInput input, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
         {
             try
