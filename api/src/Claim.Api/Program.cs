@@ -1,5 +1,6 @@
 using Claim.Api.Auth;
 using Claim.Api.Claims;
+using Claim.Api.Email;
 using Claim.Api.Users;
 using Claim.Application;
 using Claim.Application.Health;
@@ -14,6 +15,7 @@ builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration
 
 builder.Services.AddApplication(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddEmailOutboxWorker(builder.Configuration);
 builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddClaimAuth(builder.Configuration);
@@ -66,6 +68,7 @@ app.MapGet("/health", async (HealthService health, CancellationToken ct) =>
 
 app.MapAuthEndpoints();
 app.MapClaimEndpoints();
+app.MapClaimStatusEndpoints();
 app.MapUserEndpoints();
 
 app.Run();

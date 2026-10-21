@@ -65,6 +65,32 @@ public sealed class Claim
         UpdatedAt = now;
     }
 
+    /// <summary>Names of the details a Claim still lacks before it may leave Draft.</summary>
+    public IReadOnlyList<string> MissingForSubmission()
+    {
+        var missing = new List<string>();
+        if (string.IsNullOrWhiteSpace(Details.VehiclePlate)) missing.Add("vehiclePlate");
+        if (string.IsNullOrWhiteSpace(Details.VehicleMake)) missing.Add("vehicleMake");
+        if (string.IsNullOrWhiteSpace(Details.VehicleModel)) missing.Add("vehicleModel");
+        if (string.IsNullOrWhiteSpace(Details.CustomerEmail)) missing.Add("customerEmail");
+        if (string.IsNullOrWhiteSpace(Details.DamageDescription)) missing.Add("damageDescription");
+        return missing;
+    }
+
+    /// <summary>
+    /// The only way to change Status. Rejects moves the lifecycle table does not allow and returns the
+    /// Claim History line that must be stored in the same transaction as the new status.
+    /// </summary>
+    public ClaimHistoryEntry ChangeStatus(ClaimStatus to, long actorUserId, string? reason, DateTime now)
+    {
+        if (!ClaimLifecycle.CanMove(Status, to))
+            throw new ClaimRuleException($"Claim {ClaimNumber} is {Status} and cannot move to {to}.");
+        var entry = new ClaimHistoryEntry(Id, Status, to, actorUserId, now, reason);
+        Status = to;
+        UpdatedAt = now;
+        return entry;
+    }
+
     /// <summary>An Insurance Adjuster never sees a Draft; Garage Staff and Admin see every Claim.</summary>
     public bool IsVisibleTo(string role) => Status != ClaimStatus.Draft || role != Users.Role.InsuranceAdjuster;
 
