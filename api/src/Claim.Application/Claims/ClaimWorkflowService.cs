@@ -82,6 +82,10 @@ public sealed class ClaimWorkflowService(
     public async Task<ClaimDto?> RejectAsync(long id, string? reason, long actorUserId, string actorRole, CancellationToken ct) =>
         await DecideAsync(id, ClaimStatus.Rejected, "reason", reason, actorUserId, actorRole, ct);
 
+    /// <summary>Garage Staff cancels a Claim before it is Approved, with a reason. Null when the Claim does not exist.</summary>
+    public async Task<ClaimDto?> CancelAsync(long id, string? reason, long actorUserId, string actorRole, CancellationToken ct) =>
+        await DecideAsync(id, ClaimStatus.Cancelled, "reason", reason, actorUserId, actorRole, ct);
+
     private async Task<ClaimDto?> DecideAsync(long id, ClaimStatus to, string field, string? text, long actorUserId, string actorRole, CancellationToken ct)
     {
         var claim = await claims.FindByIdAsync(id, ct);
