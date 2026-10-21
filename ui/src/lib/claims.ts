@@ -57,6 +57,39 @@ export interface ClaimDetail {
   updatedAt: string;
 }
 
+/** One line of Claim History: who moved the Claim between which statuses, when and why. */
+export interface ClaimHistoryEntry {
+  fromStatus: ClaimStatus | null;
+  toStatus: ClaimStatus;
+  actorUserId: number;
+  actorName: string;
+  occurredAt: string;
+  reason: string | null;
+}
+
+const fieldLabels: Record<string, string> = {
+  vehiclePlate: "ทะเบียนรถ",
+  vehicleMake: "ยี่ห้อรถ",
+  vehicleModel: "รุ่นรถ",
+  customerEmail: "อีเมลลูกค้า",
+  damageDescription: "รายละเอียดความเสียหาย",
+  reason: "เหตุผล",
+};
+
+/** Thai message for a failed status change, naming the missing details when the API lists them. */
+export function describeStatusChangeError(error: unknown): string {
+  if (error instanceof ProxyError) {
+    if (error.status === 400 && error.problem?.errors) {
+      const missing = Object.keys(error.problem.errors).map((f) => fieldLabels[f] ?? f);
+      return `ส่งไม่ได้ ข้อมูลยังไม่ครบ: ${missing.join(", ")}`;
+    }
+    if (error.status === 409) return "เปลี่ยนสถานะไม่ได้ เพราะสถานะของเคลมนี้ไม่ได้อนุญาตให้ทำขั้นตอนนี้";
+    if (error.status === 403) return "คุณไม่มีสิทธิ์ทำรายการนี้";
+    if (error.status === 404) return "ไม่พบเคลมนี้";
+  }
+  return "ทำรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+}
+
 export interface ClaimInput {
   policyId: number;
   vehiclePlate: string;

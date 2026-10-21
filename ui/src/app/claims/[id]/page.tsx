@@ -11,8 +11,15 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { useQuery } from "@tanstack/react-query";
-import { claimStatusLabels, ProxyError, proxyFetch, type ClaimDetail } from "@/lib/claims";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  claimStatusLabels,
+  describeStatusChangeError,
+  ProxyError,
+  proxyFetch,
+  type ClaimDetail,
+  type ClaimHistoryEntry,
+} from "@/lib/claims";
 import { useSession } from "@/lib/useSession";
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
@@ -39,6 +46,19 @@ export default function ClaimDetailPage() {
     retry: false,
   });
 
+  const history = useQuery({
+    queryKey: ["claim", id, "history"],
+    queryFn: () => proxyFetch<ClaimHistoryEntry[]>(`/claims/${id}/history`),
+  });
+  const queryClient = useQueryClient();
+  const submit = useMutation({
+    mutationFn: () => proxyFetch<ClaimDetail>(`/claims/${id}/submit`, { method: "POST" }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["claim", id], updated);
+      void queryClient.invalidateQueries({ queryKey: ["claim", id, "history"] });
+    },
+  });
+
   if (claim.isPending) return <CircularProgress size={24} />;
   if (claim.isError) {
     const notFound = claim.error instanceof ProxyError && claim.error.status === 404;
@@ -60,7 +80,13 @@ export default function ClaimDetailPage() {
             แก้ไข
           </Button>
         )}
+        {canEdit && (
+          <Button variant="contained" color="success" disabled={submit.isPending} onClick={() => submit.mutate()}>
+            ส่งเคลม
+          </Button>
+        )}
       </Stack>
+      {submit.isError && <Alert severity="error">{describeStatusChangeError(submit.error)}</Alert>}
 
       <Card>
         <CardContent>
@@ -93,6 +119,31 @@ export default function ClaimDetailPage() {
             <Field label="สร้างเมื่อ" value={formatDate(c.createdAt)} />
             <Field label="แก้ไขล่าสุด" value={formatDate(c.updatedAt)} />
           </Grid>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            ประวัติเคลม
+          </Typography>
+          {history.isPending && <CircularProgress size={20} />}
+          {history.isError && <Alert severity="error">โหลดประวัติเคลมไม่สำเร็จ</Alert>}
+          {history.data?.length === 0 && <Typography color="text.secondary">ยังไม่มีการเปลี่ยนสถานะ</Typography>}
+          <Stack spacing={1.5}>
+            {history.data?.map((h, i) => (
+              <div key={i}>
+                <Typography>
+                  {h.fromStatus ? `${claimStatusLabels[h.fromStatus]} → ` : ""}
+                  {claimStatusLabels[h.toStatus]}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {h.actorName} · {formatDate(h.occurredAt)}
+                </Typography>
+                {h.reason && <Typography variant="body2">เหตุผล: {h.reason}</Typography>}
+              </div>
+            ))}
+          </Stack>
         </CardContent>
       </Card>
     </Stack>
