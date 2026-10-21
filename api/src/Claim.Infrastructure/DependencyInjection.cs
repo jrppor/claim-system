@@ -1,6 +1,9 @@
+using Claim.Application.Auth;
 using Claim.Application.Health;
+using Claim.Infrastructure.Auth;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 
 namespace Claim.Infrastructure;
 
@@ -11,6 +14,15 @@ public static class DependencyInjection
         var cs = config.GetConnectionString("Claim")
             ?? throw new InvalidOperationException("ConnectionStrings:Claim is not configured.");
         services.AddSingleton<IDatabaseProbe>(new SqlDatabaseProbe(cs));
+        services.AddSingleton<IUserRepository>(new SqlUserRepository(cs));
+
+        // Connect lazily so the API starts (and tests run) without Redis.
+        var redisConfig = config["Redis:Configuration"] ?? "localhost:6379";
+        services.AddSingleton(new Lazy<IConnectionMultiplexer>(() => ConnectionMultiplexer.Connect(redisConfig)));
+        services.AddSingleton<IRefreshTokenStore, RedisRefreshTokenStore>();
+
+        services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
+        services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
         return services;
     }
 }
