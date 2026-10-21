@@ -57,13 +57,19 @@ public sealed class SqlClaimRepository(string connectionString) : IClaimReposito
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
         public byte[] RowVersion { get; set; } = [];
+        public decimal? ApprovedAmount { get; set; }
+        public long? ApprovedRepairEstimateId { get; set; }
 
-        public ClaimEntity ToClaim() =>
-            new(Enum.Parse<ClaimStatus>(Status), new ClaimDetails(VehiclePlate, VehicleMake, VehicleModel, CustomerEmail, DamageDescription), UpdatedAt)
+        public ClaimEntity ToClaim()
+        {
+            var claim = new ClaimEntity(Enum.Parse<ClaimStatus>(Status), new ClaimDetails(VehiclePlate, VehicleMake, VehicleModel, CustomerEmail, DamageDescription), UpdatedAt)
             {
                 Id = Id, ClaimNumber = ClaimNumber, PolicyId = PolicyId, CreatedByUserId = CreatedByUserId,
                 CreatedAt = CreatedAt, RowVersion = RowVersion,
             };
+            if (ApprovedAmount is { } amount && ApprovedRepairEstimateId is { } estimateId) claim.RestoreApproval(amount, estimateId);
+            return claim;
+        }
     }
 
     public async Task<long> NextClaimSequenceAsync(CancellationToken ct)
