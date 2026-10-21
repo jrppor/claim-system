@@ -66,6 +66,7 @@ app.MapGet("/health", async (HealthService health, CancellationToken ct) =>
 
 app.MapAuthEndpoints();
 app.MapClaimEndpoints();
+app.MapClaimListEndpoints();
 app.MapUserEndpoints();
 
 app.Run();
