@@ -46,6 +46,32 @@ public sealed class FakeUserRepository : IUserRepository
     public Task<User?> FindByIdAsync(long id, CancellationToken ct) =>
         Task.FromResult(_users.FirstOrDefault(u => u.Id == id));
 
+    public Task<User?> CreateAsync(string email, string passwordHash, string displayName, string role, CancellationToken ct)
+    {
+        lock (_users)
+        {
+            if (_users.Any(u => string.Equals(u.Email, email, StringComparison.OrdinalIgnoreCase)))
+                return Task.FromResult<User?>(null);
+            var user = new User(_users.Count + 1, email, passwordHash, displayName, role, true);
+            _users.Add(user);
+            return Task.FromResult<User?>(user);
+        }
+    }
+
+    public Task<bool> SetPasswordHashAsync(long id, string passwordHash, CancellationToken ct)
+    {
+        var i = _users.FindIndex(u => u.Id == id);
+        if (i >= 0) _users[i] = _users[i] with { PasswordHash = passwordHash };
+        return Task.FromResult(i >= 0);
+    }
+
+    public Task<bool> SetActiveAsync(long id, bool isActive, CancellationToken ct)
+    {
+        var i = _users.FindIndex(u => u.Id == id);
+        if (i >= 0) _users[i] = _users[i] with { IsActive = isActive };
+        return Task.FromResult(i >= 0);
+    }
+
     public Task<IReadOnlyList<User>> ListAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<User>>(_users.ToList());
 }
@@ -54,6 +80,11 @@ public sealed class FakeRefreshTokenStore : IRefreshTokenStore
 {
     private readonly Dictionary<string, long> _tokens = [];
     private readonly object _lock = new();
+
+    public bool Contains(string token)
+    {
+        lock (_lock) return _tokens.ContainsKey(token);
+    }
 
     public Task SaveAsync(string token, long userId, TimeSpan lifetime, CancellationToken ct)
     {
@@ -65,6 +96,13 @@ public sealed class FakeRefreshTokenStore : IRefreshTokenStore
     {
         lock (_lock)
             return Task.FromResult(_tokens.Remove(token, out var id) ? (long?)id : null);
+    }
+
+    public Task RevokeAllForUserAsync(long userId, CancellationToken ct)
+    {
+        lock (_lock)
+            foreach (var t in _tokens.Where(kv => kv.Value == userId).Select(kv => kv.Key).ToList()) _tokens.Remove(t);
+        return Task.CompletedTask;
     }
 
     public Task RevokeAsync(string token, CancellationToken ct)
