@@ -65,6 +65,13 @@ public sealed class Claim
         UpdatedAt = now;
     }
 
+    /// <summary>Refuses a Repair Estimate revision unless the lifecycle accepts one in the current status.</summary>
+    public void EnsureAcceptsEstimate()
+    {
+        if (!ClaimLifecycle.AcceptsEstimate(Status))
+            throw new ClaimRuleException($"Claim {ClaimNumber} is {Status}; a Repair Estimate can only be submitted while it is Submitted or ChangesRequested.");
+    }
+
     /// <summary>Names of the details a Claim still lacks before it may leave Draft.</summary>
     public IReadOnlyList<string> MissingForSubmission()
     {

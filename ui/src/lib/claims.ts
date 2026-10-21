@@ -67,6 +67,54 @@ export interface ClaimHistoryEntry {
   reason: string | null;
 }
 
+export type EstimateLineKind = "Part" | "Labour";
+
+export const estimateLineKindLabels: Record<EstimateLineKind, string> = {
+  Part: "อะไหล่",
+  Labour: "ค่าแรง",
+};
+
+export interface EstimateLine {
+  kind: EstimateLineKind;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+/** One revision of a Repair Estimate. The Estimated Amount is computed by the API, never sent by the client. */
+export interface RepairEstimate {
+  id: number;
+  claimId: number;
+  revision: number;
+  isLatest: boolean;
+  lines: EstimateLine[];
+  estimatedAmount: number;
+  coverageLimit: number;
+  exceedsCoverageLimit: boolean;
+  warnings: string[];
+  submittedByUserId: number;
+  submittedAt: string;
+}
+
+export interface EstimateInput {
+  lines: { kind: EstimateLineKind; description: string; quantity: number; unitPrice: number }[];
+}
+
+/** Statuses in which Garage Staff may submit a Repair Estimate revision (mirrors ClaimLifecycle.AcceptsEstimate). */
+export const estimateAcceptingStatuses: readonly ClaimStatus[] = ["Submitted", "ChangesRequested"];
+
+/** Thai message for a failed Repair Estimate submission. */
+export function describeEstimateError(error: unknown): string {
+  if (error instanceof ProxyError) {
+    if (error.status === 400) return "ข้อมูลรายการไม่ถูกต้อง กรุณาตรวจสอบรายละเอียด จำนวน และราคาต่อหน่วย";
+    if (error.status === 409) return "ส่งใบประเมินไม่ได้ เพราะสถานะของเคลมนี้ไม่รับใบประเมิน";
+    if (error.status === 403) return "คุณไม่มีสิทธิ์ทำรายการนี้";
+    if (error.status === 404) return "ไม่พบเคลมนี้";
+  }
+  return "ส่งใบประเมินไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+}
+
 const fieldLabels: Record<string, string> = {
   vehiclePlate: "ทะเบียนรถ",
   vehicleMake: "ยี่ห้อรถ",
