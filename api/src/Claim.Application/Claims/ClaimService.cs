@@ -26,7 +26,8 @@ public sealed record ClaimDto(
     DateTime CreatedAt,
     DateTime UpdatedAt,
     decimal? ApprovedAmount = null,
-    long? ApprovedEstimateId = null);
+    long? ApprovedEstimateId = null,
+    string? Version = null);
 
 public sealed class ClaimValidationException(IReadOnlyDictionary<string, string[]> errors) : Exception("Claim input is invalid.")
 {
@@ -62,7 +63,7 @@ public sealed class ClaimService(IClaimRepository claims, IPolicyRepository poli
     }
 
     /// <summary>Edits a Draft. The Policy a Claim was opened under never changes. Returns null when the Claim does not exist.</summary>
-    public async Task<ClaimDto?> EditDraftAsync(long id, ClaimInput input, CancellationToken ct)
+    public async Task<ClaimDto?> EditDraftAsync(long id, ClaimInput input, CancellationToken ct, byte[]? expectedVersion = null)
     {
         var errors = ValidateDetails(input);
         if (errors.Count > 0) throw new ClaimValidationException(errors);
@@ -70,6 +71,7 @@ public sealed class ClaimService(IClaimRepository claims, IPolicyRepository poli
         var claim = await claims.FindByIdAsync(id, ct);
         if (claim is null) return null;
 
+        claim.ExpectVersion(expectedVersion);
         claim.EditDraft(ToDetails(input), clock.GetUtcNow().UtcDateTime);
         await claims.UpdateAsync(claim, ct);
         return await ToDtoAsync((await claims.FindByIdAsync(id, ct))!, ct);
@@ -98,5 +100,6 @@ public sealed class ClaimService(IClaimRepository claims, IPolicyRepository poli
     private static ClaimDto ToDto(ClaimEntity c, Policy policy) => new(
         c.Id, c.ClaimNumber, c.Status.ToString(), policy,
         c.Details.VehiclePlate, c.Details.VehicleMake, c.Details.VehicleModel,
-        c.Details.CustomerEmail, c.Details.DamageDescription, c.CreatedAt, c.UpdatedAt, c.ApprovedAmount, c.ApprovedEstimateId);
+        c.Details.CustomerEmail, c.Details.DamageDescription, c.CreatedAt, c.UpdatedAt, c.ApprovedAmount, c.ApprovedEstimateId,
+        ClaimVersion.Format(c.RowVersion));
 }

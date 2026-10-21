@@ -43,8 +43,17 @@ public sealed class Claim
     /// <summary>The Repair Estimate revision that was the latest (the one under review) when the Claim was approved.</summary>
     public long? ApprovedEstimateId { get; private set; }
 
-    /// <summary>Optimistic-concurrency token (SQL rowversion). Enforced in a later ticket.</summary>
+    /// <summary>
+    /// Optimistic-concurrency token (SQL rowversion). Every write through the repositories / Unit of Work succeeds only if the
+    /// stored version still equals this one, then refreshes it to the new stored version.
+    /// </summary>
     public byte[] RowVersion { get; set; } = [];
+
+    /// <summary>Pins the version the caller read: the next write fails with a conflict if the Claim has changed since. Null keeps the version just loaded.</summary>
+    public void ExpectVersion(byte[]? version)
+    {
+        if (version is not null) RowVersion = version;
+    }
 
     public Claim(ClaimStatus status, ClaimDetails details, DateTime updatedAt)
     {

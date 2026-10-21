@@ -34,11 +34,11 @@ public static class ClaimEndpoints
             return claim is null ? NotFound(id) : Results.Ok(claim);
         }).RequireAuthorization();
 
-        claims.MapPut("/{id:long}", async (long id, ClaimInput input, ClaimService service, CancellationToken ct) =>
+        claims.MapPut("/{id:long}", async (long id, ClaimInput input, HttpContext http, ClaimService service, CancellationToken ct) =>
         {
             try
             {
-                var claim = await service.EditDraftAsync(id, input, ct);
+                var claim = await service.EditDraftAsync(id, input, ct, http.Request.ExpectedVersion());
                 return claim is null ? NotFound(id) : Results.Ok(claim);
             }
             catch (ClaimValidationException ex)

@@ -3,6 +3,7 @@ using Claim.Api.Claims;
 using Claim.Api.Email;
 using Claim.Api.Users;
 using Claim.Application;
+using Claim.Application.Claims;
 using Claim.Application.Health;
 using Claim.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics;
@@ -35,15 +36,22 @@ var app = builder.Build();
 app.UseExceptionHandler(errors => errors.Run(async ctx =>
 {
     var ex = ctx.Features.Get<IExceptionHandlerFeature>()?.Error;
-    if (ex is not null) Log.Error(ex, "Unhandled exception");
-    ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    var (status, title) = ex switch
+    {
+        ConcurrencyException => (StatusCodes.Status409Conflict, "The Claim was changed by someone else"),
+        InvalidVersionException => (StatusCodes.Status400BadRequest, "Invalid Claim version"),
+        _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred."),
+    };
+    if (ex is not null && status == 500) Log.Error(ex, "Unhandled exception");
+    ctx.Response.StatusCode = status;
     await ctx.RequestServices.GetRequiredService<IProblemDetailsService>().WriteAsync(new()
     {
         HttpContext = ctx,
         ProblemDetails = new ProblemDetails
         {
-            Status = 500,
-            Title = "An unexpected error occurred.",
+            Status = status,
+            Title = title,
+            Detail = status == 500 ? null : ex!.Message,
         },
     });
 }));
