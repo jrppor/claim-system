@@ -22,6 +22,8 @@ public static class DependencyInjection
         services.AddSingleton<Application.Claims.IEmailOutboxStore>(new Claims.SqlEmailOutboxStore(cs));
         services.AddSingleton<Application.Claims.IEmailSender, Email.SmtpEmailSender>();
 
+        services.AddSingleton<Application.Claims.IClaimListQueries>(new Claims.SqlClaimListQueries(cs));
+
         // Connect lazily so the API starts (and tests run) without Redis.
         var redisConfig = config["Redis:Configuration"] ?? "localhost:6379";
         services.AddSingleton(new Lazy<IConnectionMultiplexer>(() => ConnectionMultiplexer.Connect(redisConfig)));

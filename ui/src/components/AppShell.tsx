@@ -21,6 +21,8 @@ interface NavItem {
 // Items are filtered by canAccess, so a role never sees a link to a page it cannot open.
 const navItems: NavItem[] = [
   { label: "หน้าแรก", href: "/" },
+  { label: "แดชบอร์ด", href: "/dashboard" },
+  { label: "รายการเคลม", href: "/claims" },
   { label: "สร้างเคลม", href: "/claims/new" },
   { label: "จัดการผู้ใช้", href: "/users" },
   { label: "ฟอร์มตัวอย่าง", href: "/sample-form" },
