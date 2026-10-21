@@ -17,6 +17,7 @@ public static class DependencyInjection
         services.AddScoped<UserService>();
         services.AddScoped<Claims.PolicyService>();
         services.AddScoped<Claims.ClaimService>();
+        services.AddScoped<Claims.ClaimListService>();
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }

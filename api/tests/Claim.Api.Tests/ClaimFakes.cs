@@ -31,12 +31,12 @@ public sealed class FakeClaimRepository : IClaimRepository
     }
 
     /// <summary>Puts a Claim straight into the store in any status (the lifecycle endpoints arrive in later tickets).</summary>
-    public Domain.Claims.Claim Seed(Domain.Claims.ClaimStatus status, long policyId, long createdByUserId)
+    public Domain.Claims.Claim Seed(Domain.Claims.ClaimStatus status, long policyId, long createdByUserId, string plate = "1กก 1234")
     {
         lock (_lock)
         {
             var id = ++_nextId;
-            var claim = new Domain.Claims.Claim(status, new Domain.Claims.ClaimDetails("1กก 1234", "Toyota", "Camry", "a@b.test", "ชนท้าย"), DateTime.UtcNow)
+            var claim = new Domain.Claims.Claim(status, new Domain.Claims.ClaimDetails(plate, "Toyota", "Camry", "a@b.test", "ชนท้าย"), DateTime.UtcNow)
             {
                 Id = id,
                 ClaimNumber = Domain.Claims.Claim.FormatNumber(2026, 900 + id),
@@ -73,6 +73,8 @@ public static class ClaimFakeRegistration
         services.AddSingleton<IPolicyRepository>(policies);
         services.RemoveAll<IClaimRepository>();
         services.AddSingleton<IClaimRepository>(claims);
+        services.RemoveAll<IClaimListQueries>();
+        services.AddSingleton<IClaimListQueries>(new FakeClaimListQueries(policies, claims));
         return services;
     }
 }
