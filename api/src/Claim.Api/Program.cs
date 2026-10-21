@@ -1,4 +1,5 @@
 using Claim.Api.Auth;
+using Claim.Api.Claims;
 using Claim.Api.Users;
 using Claim.Application;
 using Claim.Application.Health;
@@ -64,6 +65,7 @@ app.MapGet("/health", async (HealthService health, CancellationToken ct) =>
 .WithTags("System");
 
 app.MapAuthEndpoints();
+app.MapClaimEndpoints();
 app.MapUserEndpoints();
 
 app.Run();
