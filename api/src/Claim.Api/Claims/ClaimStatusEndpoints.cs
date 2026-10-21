@@ -41,6 +41,14 @@ public static class ClaimStatusEndpoints
             }
         }).RequireAuthorization(AuthPolicies.InsuranceAdjuster);
 
+        claims.MapPost("/{id:long}/start-repair", async (long id, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
+            await Decide(id, http, ct, (actor, role) => workflow.StartRepairAsync(id, actor, role, ct)))
+            .RequireAuthorization(AuthPolicies.GarageStaff);
+
+        claims.MapPost("/{id:long}/mark-repaired", async (long id, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
+            await Decide(id, http, ct, (actor, role) => workflow.MarkRepairedAsync(id, actor, role, ct)))
+            .RequireAuthorization(AuthPolicies.GarageStaff);
+
         claims.MapPost("/{id:long}/approve", async (long id, ApproveInput input, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
         {
             try

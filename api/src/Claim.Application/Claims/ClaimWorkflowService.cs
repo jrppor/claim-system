@@ -82,6 +82,23 @@ public sealed class ClaimWorkflowService(
     public async Task<ClaimDto?> RejectAsync(long id, string? reason, long actorUserId, string actorRole, CancellationToken ct) =>
         await DecideAsync(id, ClaimStatus.Rejected, "reason", reason, actorUserId, actorRole, ct);
 
+    /// <summary>Approved → InRepair: the garage begins the repair. Null when the Claim does not exist or the role may not see it.</summary>
+    public async Task<ClaimDto?> StartRepairAsync(long id, long actorUserId, string actorRole, CancellationToken ct) =>
+        await MoveAsync(id, ClaimStatus.InRepair, actorUserId, actorRole, ct);
+
+    /// <summary>InRepair → Repaired: the work is done and the garage can invoice. Null when the Claim does not exist or the role may not see it.</summary>
+    public async Task<ClaimDto?> MarkRepairedAsync(long id, long actorUserId, string actorRole, CancellationToken ct) =>
+        await MoveAsync(id, ClaimStatus.Repaired, actorUserId, actorRole, ct);
+
+    private async Task<ClaimDto?> MoveAsync(long id, ClaimStatus to, long actorUserId, string actorRole, CancellationToken ct)
+    {
+        var claim = await claims.FindByIdAsync(id, ct);
+        if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
+
+        await ChangeStatusAsync(claim, to, actorUserId, null, ct);
+        return await claimService.GetAsync(id, actorRole, ct);
+    }
+
     private async Task<ClaimDto?> DecideAsync(long id, ClaimStatus to, string field, string? text, long actorUserId, string actorRole, CancellationToken ct)
     {
         var claim = await claims.FindByIdAsync(id, ct);
