@@ -435,4 +435,16 @@ public class ClaimPhotoTests : IClassFixture<ApiFactory>
         Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
         Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
     }
+
+    [Fact]
+    public async Task A_request_without_any_file_is_400_and_changes_nothing()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var form = new MultipartFormDataContent { { new StringContent("just a caption"), "caption" } };
+
+        var response = await (await Staff()).PostAsync($"/claims/{claim.Id}/photos", form);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
+    }
 }

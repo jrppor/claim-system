@@ -24,6 +24,7 @@ public sealed class ClaimPhotoService(
         claim.EnsureVersion(expectedVersion);
 
         claim.EnsureAcceptsPhotoChange();
+        if (uploads.Count == 0) throw FileRejected("Choose at least one image file.");
         claim.EnsureRoomForPhotos((await photos.ListAsync(claimId, ct)).Count, uploads.Count);
 
         var now = clock.GetUtcNow().UtcDateTime;
