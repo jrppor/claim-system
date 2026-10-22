@@ -21,6 +21,7 @@ public static class DependencyInjection
         services.AddScoped<Claims.ClaimListService>();
         services.AddScoped<Claims.ClaimPhotoService>();
         services.AddScoped<Claims.PhotoThumbnails>();
+        services.AddScoped<Claims.ClaimPhotoRemovalService>();
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }

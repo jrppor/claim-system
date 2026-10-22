@@ -25,6 +25,9 @@ public interface IUnitOfWork
     /// Claim row is written (version compared and refreshed) so a stale caller is refused and the photo change is a new version.
     /// </summary>
     Task<ClaimPhoto> RecordPhotoAsync(ClaimPhoto photo, Domain.Claims.Claim claim, ClaimHistoryEntry entry, CancellationToken ct);
+
+    /// <summary>Deletes a Claim Photo row with its Claim History line in one transaction; the Claim version is compared and refreshed as for an upload.</summary>
+    Task RecordPhotoRemovedAsync(ClaimPhoto photo, Domain.Claims.Claim claim, ClaimHistoryEntry entry, CancellationToken ct);
 }
 
 public interface IClaimHistoryRepository

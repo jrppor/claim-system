@@ -78,6 +78,25 @@ public class ClaimPhotoThumbnailTests : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Deleting_a_photo_removes_both_the_original_and_the_thumbnail_file()
+    {
+        var claim = _factory.Claims.Seed(ClaimStatus.Draft, 1, 1);
+        var staff = await Staff();
+        var before = _factory.Files.Names.ToHashSet();
+        var photoId = await UploadPhoto(staff, claim.Id);
+        Assert.Equal(2, _factory.Files.Names.Except(before).Count());
+
+        var version = (await staff.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}")).GetProperty("version").GetString();
+        var request = new HttpRequestMessage(HttpMethod.Delete, $"/claims/{claim.Id}/photos/{photoId}");
+        request.Headers.TryAddWithoutValidation("If-Match", $"\"{version}\"");
+        var deleted = await staff.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
+        Assert.Empty(_factory.Files.Names.Except(before));
+        Assert.Equal(HttpStatusCode.NotFound, (await staff.GetAsync($"/claims/{claim.Id}/photos/{photoId}/thumbnail")).StatusCode);
+    }
+
+    [Fact]
     public async Task A_thumbnail_of_a_photo_of_another_claim_or_that_does_not_exist_is_404()
     {
         var one = _factory.Claims.Seed(ClaimStatus.Draft, 1, 1);
