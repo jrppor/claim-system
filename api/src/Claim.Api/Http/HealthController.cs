@@ -14,6 +14,6 @@ public sealed class HealthController(HealthService health) : ControllerBase
         var report = await health.CheckAsync(ct);
         return report.IsHealthy
             ? Ok(report)
-            : Problem(title: "Database unavailable", statusCode: StatusCodes.Status503ServiceUnavailable);
+            : this.ProblemResult("Database unavailable", null, StatusCodes.Status503ServiceUnavailable);
     }
 }

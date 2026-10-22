@@ -70,7 +70,7 @@ public sealed class ClaimWorkflowController(ClaimWorkflowService workflow) : Con
     {
         var invoice = await workflow.GetInvoiceAsync(id, Actor.From(User).Role, ct);
         return invoice is null
-            ? Problem(title: "Not Found", detail: $"Claim {id} has no Invoice.", statusCode: StatusCodes.Status404NotFound)
+            ? this.ProblemResult("Not Found", $"Claim {id} has no Invoice.", StatusCodes.Status404NotFound)
             : Ok(invoice);
     }
 

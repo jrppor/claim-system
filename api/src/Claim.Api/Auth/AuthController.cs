@@ -24,7 +24,7 @@ public sealed class AuthController(AuthService service) : ControllerBase
 
         var result = await service.LoginAsync(req.Email!, req.Password!, ct);
         return result is null
-            ? Problem(title: "Unauthorized", detail: "Invalid email or password.", statusCode: StatusCodes.Status401Unauthorized)
+            ? this.ProblemResult("Unauthorized", "Invalid email or password.", StatusCodes.Status401Unauthorized)
             : Ok(result);
     }
 
@@ -36,7 +36,7 @@ public sealed class AuthController(AuthService service) : ControllerBase
             return this.ValidationError(new Dictionary<string, string[]> { ["refreshToken"] = ["Refresh token is required."] });
         var result = await service.RefreshAsync(req.RefreshToken, ct);
         return result is null
-            ? Problem(title: "Unauthorized", detail: "Refresh token is invalid or expired.", statusCode: StatusCodes.Status401Unauthorized)
+            ? this.ProblemResult("Unauthorized", "Refresh token is invalid or expired.", StatusCodes.Status401Unauthorized)
             : Ok(result);
     }
 

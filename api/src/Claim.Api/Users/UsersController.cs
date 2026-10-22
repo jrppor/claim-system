@@ -54,7 +54,7 @@ public sealed class UsersController(UserService service) : ControllerBase
     }
 
     private IActionResult UserNotFound() =>
-        Problem(title: "ไม่พบข้อมูล", detail: "ไม่พบผู้ใช้นี้", statusCode: StatusCodes.Status404NotFound);
+        this.ProblemResult("ไม่พบข้อมูล", "ไม่พบผู้ใช้นี้", StatusCodes.Status404NotFound);
 
     private static string? PasswordError(string? password) =>
         string.IsNullOrEmpty(password) ? "กรุณากรอกรหัสผ่าน"
