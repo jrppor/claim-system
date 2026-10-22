@@ -24,6 +24,7 @@ import {
   type ClaimDetail,
   type ClaimPhoto,
 } from "@/lib/claims";
+import { PhotoDeleteButton } from "@/components/PhotoDeleteButton";
 
 /** One photo's bytes, fetched through the authenticated proxy and shown from an object URL. */
 function PhotoImage({ claimId, photo, height }: { claimId: number; photo: ClaimPhoto; height: number | string }) {
@@ -109,6 +110,7 @@ export function ClaimPhotoSection({ claim, role }: { claim: ClaimDetail; role: s
               <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", px: 1, py: 0.5 }}>
                 {p.originalFileName}
               </Typography>
+              <PhotoDeleteButton claim={claim} photo={p} role={role} />
             </Card>
           ))}
         </Box>
