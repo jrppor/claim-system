@@ -142,7 +142,16 @@ public sealed class FakeUnitOfWork(
     {
         // All or nothing, like the real transaction: the rows are only visible once every one of them went in.
         var stored = photos.AppendAll(newPhotos);
-        for (var i = 0; i < entries.Count; i++) await RecordStatusChangeAsync(claim, entries[i], null, ct);
+        try
+        {
+            // The first Claim write is the version check; a stale caller fails here, and (as in SQL) its rows must not survive.
+            for (var i = 0; i < entries.Count; i++) await RecordStatusChangeAsync(claim, entries[i], null, ct);
+        }
+        catch
+        {
+            foreach (var photo in stored) photos.Remove(photo.Id);
+            throw;
+        }
         return stored;
     }
 

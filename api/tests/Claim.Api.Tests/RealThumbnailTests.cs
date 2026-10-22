@@ -126,4 +126,55 @@ public class RealThumbnailTests : IClassFixture<RealImagingApiFactory>
         Assert.Equal(filesBefore, _factory.Files.Names.ToHashSet());
         Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
     }
+
+    /// <summary>A small, real PNG whose header (IHDR) claims another size: a decompression bomb costs a few hundred bytes to send.</summary>
+    private static byte[] PngDeclaring(int width, int height)
+    {
+        var png = Image(1, 1, SKEncodedImageFormat.Png);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(png.AsSpan(16, 4), width);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(png.AsSpan(20, 4), height);
+        // The chunk's CRC covers its type and data (bytes 12..28); decoders refuse the header when it does not match.
+        var crc = 0xFFFFFFFFu;
+        foreach (var b in png.AsSpan(12, 17))
+        {
+            crc ^= b;
+            for (var k = 0; k < 8; k++) crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
+        }
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(png.AsSpan(29, 4), ~crc);
+        return png;
+    }
+
+    [Theory]
+    [InlineData(10_000, 10_000)] // 100 megapixels: over the pixel cap though each side is fine
+    [InlineData(50_000, 10)] // few pixels but a side over the cap
+    public async Task An_image_whose_header_declares_huge_dimensions_is_rejected_with_400_naming_the_file_before_it_is_decoded(int width, int height)
+    {
+        var claim = _factory.Claims.Seed(ClaimStatus.Draft, 1, 1);
+        var staff = await Staff();
+        var filesBefore = _factory.Files.Names.ToHashSet();
+        var bomb = PngDeclaring(width, height);
+        Assert.True(bomb.Length < 1000);
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", Upload(bomb, "bomb.png", "image/png"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var reason = problem.GetProperty("errors").GetProperty("file")[0].GetString();
+        Assert.Contains("bomb.png", reason);
+        Assert.Contains("too large", reason);
+        Assert.Equal("bomb.png", problem.GetProperty("fileName").GetString());
+        Assert.Equal(filesBefore, _factory.Files.Names.ToHashSet());
+        Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
+    }
+
+    [Fact]
+    public async Task An_image_just_inside_the_pixel_cap_is_still_accepted()
+    {
+        // 7000 x 7000 = 49 megapixels declared (the body holds a single pixel; the decoder fills in the rest).
+        var claim = _factory.Claims.Seed(ClaimStatus.Draft, 1, 1);
+
+        var response = await (await Staff()).PostAsync($"/claims/{claim.Id}/photos", Upload(PngDeclaring(7000, 7000), "big.png", "image/png"));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
 }

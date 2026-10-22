@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Claim.Api.Tests;
 
-/// <summary>Deleting a Claim Photo (ticket 03): Garage Staff only, before approval, with If-Match, file and row gone together.</summary>
+/// <summary>Deleting a Claim Photo: Garage Staff only, before approval, with If-Match, file and row gone together.</summary>
 public class ClaimPhotoDeleteTests : IClassFixture<ApiFactory>
 {
     private readonly ApiFactory _factory;
@@ -200,22 +200,70 @@ public class ClaimPhotoDeleteTests : IClassFixture<ApiFactory>
         Assert.Contains(logs.Entries, e => e.Level >= LogLevel.Warning && e.Message.Contains(photo.StoredName) && e.Exception is IOException);
     }
 
-    private sealed class CapturingLog
+    /// <summary>Like <see cref="SeedClaimWithPhoto"/> but the photo also has a stored thumbnail.</summary>
+    private async Task<(Domain.Claims.Claim Claim, ClaimPhoto Photo)> SeedClaimWithPhotoAndThumbnail()
     {
-        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+        var (claim, photo) = await SeedClaimWithPhoto(ClaimStatus.Draft);
+        var thumbnailName = Guid.NewGuid().ToString("N") + "_thumb.jpg";
+        await _factory.Files.SaveAsync(thumbnailName, new MemoryStream(Jpeg), default);
+        _factory.Photos.Remove(photo.Id);
+        return (claim, _factory.Photos.Append((photo with { ThumbnailStoredName = thumbnailName }) with { Id = 0 }));
     }
 
-    /// <summary>Serilog replaces the host's logger factory, so the log is captured by swapping the service's own logger.</summary>
-    private sealed class CapturingLogger<T>(CapturingLog log) : ILogger<T>
+    private async Task<(HttpClient Client, CapturingLog Logs)> StaffWithRemovalLog()
     {
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        var logs = new CapturingLog();
+        var factory = _factory.WithWebHostBuilder(b => b.ConfigureServices(s => s.AddSingleton<ILogger<ClaimPhotoRemovalService>>(new CapturingLogger<ClaimPhotoRemovalService>(logs))));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = (await Staff()).DefaultRequestHeaders.Authorization;
+        return (client, logs);
+    }
 
-        public bool IsEnabled(LogLevel logLevel) => true;
+    [Fact]
+    public async Task When_the_original_cannot_be_deleted_the_thumbnail_is_still_removed_and_each_failure_is_logged_by_name()
+    {
+        var (claim, photo) = await SeedClaimWithPhotoAndThumbnail();
+        var (client, logs) = await StaffWithRemovalLog();
+        _factory.Files.FailDeleteOf.Add(photo.StoredName);
 
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-        {
-            lock (log.Entries) log.Entries.Add((logLevel, formatter(state, exception), exception));
-        }
+        var response = await client.SendAsync(Delete(claim.Id, photo.Id, VersionOf(claim)));
+        _factory.Files.FailDeleteOf.Clear();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.DoesNotContain(photo.ThumbnailStoredName!, _factory.Files.Names);
+        Assert.Contains(logs.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains(photo.StoredName));
+        Assert.DoesNotContain(logs.Entries, e => e.Message.Contains(photo.ThumbnailStoredName!));
+    }
+
+    [Fact]
+    public async Task When_the_thumbnail_cannot_be_deleted_the_original_is_removed_and_the_thumbnail_failure_is_logged_by_name()
+    {
+        var (claim, photo) = await SeedClaimWithPhotoAndThumbnail();
+        var (client, logs) = await StaffWithRemovalLog();
+        _factory.Files.FailDeleteOf.Add(photo.ThumbnailStoredName!);
+
+        var response = await client.SendAsync(Delete(claim.Id, photo.Id, VersionOf(claim)));
+        _factory.Files.FailDeleteOf.Clear();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.DoesNotContain(photo.StoredName, _factory.Files.Names);
+        Assert.Contains(logs.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains(photo.ThumbnailStoredName!));
+    }
+
+    [Fact]
+    public async Task A_photo_whose_row_exists_but_whose_file_is_missing_is_404_to_the_client_and_a_warning_in_the_log()
+    {
+        var (claim, photo) = await SeedClaimWithPhoto(ClaimStatus.Draft);
+        await _factory.Files.DeleteAsync(photo.StoredName, default);
+        var logs = new CapturingLog();
+        using var factory = _factory.WithWebHostBuilder(b => b.ConfigureServices(s => s.AddSingleton<ILogger<ClaimPhotoService>>(new CapturingLogger<ClaimPhotoService>(logs))));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = (await Staff()).DefaultRequestHeaders.Authorization;
+
+        var response = await client.GetAsync($"/claims/{claim.Id}/photos/{photo.Id}/file");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Contains(logs.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains(photo.StoredName));
     }
 
     [Fact]

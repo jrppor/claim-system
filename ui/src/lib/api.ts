@@ -6,6 +6,8 @@ export interface ProblemDetails {
   status?: number;
   detail?: string;
   errors?: Record<string, string[]>;
+  /** Set when a 400 is about one uploaded file: that file's name (shown to the user, never parsed out of text). */
+  fileName?: string;
 }
 
 export class ApiError extends Error {

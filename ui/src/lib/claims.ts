@@ -258,22 +258,16 @@ export const maxPhotosPerClaim = 20;
 /** Longest photo caption (mirrors PhotoFormat.MaxCaptionLength). */
 export const maxPhotoCaptionLength = 200;
 
-/** The file name the API put in front of its reason ("name.jpg: only JPEG..."), so the user knows which file to fix. */
-function offendingFile(error: ProxyError): string | undefined {
-  const first = Object.values(error.problem?.errors ?? {})[0]?.[0];
-  const cut = first?.indexOf(": ") ?? -1;
-  return first && cut > 0 ? first.slice(0, cut) : undefined;
-}
-
 /** Thai message for a failed photo upload. */
 export function describePhotoUploadError(error: unknown): string {
   if (isVersionConflict(error)) return versionConflictMessage;
   if (error instanceof ProxyError) {
-    if (error.status === 400 || error.status === 413) {
-      const file = error.problem?.errors ? offendingFile(error) : undefined;
-      const which = file ? ` (ไฟล์ ${file})` : "";
+    if (error.status === 413)
+      return `ไฟล์ที่เลือกมีขนาดรวมใหญ่เกินไป (รวมกันไม่เกินประมาณ ${maxPhotosPerClaim * 10} MB ต่อครั้ง) กรุณาเลือกรูปน้อยลงหรือลดขนาดไฟล์ ไม่มีรูปใดถูกแนบ`;
+    if (error.status === 400) {
+      const which = error.problem?.fileName ? ` (ไฟล์ ${error.problem.fileName})` : "";
       if (error.problem?.errors?.caption) return `คำอธิบายรูปยาวเกิน ${maxPhotoCaptionLength} ตัวอักษร${which} ไม่มีรูปใดถูกแนบ`;
-      return `ไฟล์ไม่ถูกต้อง${which} รองรับเฉพาะรูป JPEG, PNG หรือ WebP ขนาดไม่เกิน 10 MB ต่อไฟล์ ไม่มีรูปใดถูกแนบ`;
+      return `ไฟล์ไม่ถูกต้อง${which} รองรับเฉพาะรูป JPEG, PNG หรือ WebP ขนาดไม่เกิน 10 MB ต่อไฟล์ และไม่เกิน 50 ล้านพิกเซล ไม่มีรูปใดถูกแนบ`;
     }
     if (error.status === 409) {
       if (error.problem?.detail?.includes("limit")) return `แนบรูปไม่ได้ เพราะเคลมนี้มีรูปได้ไม่เกิน ${maxPhotosPerClaim} รูป ไม่มีรูปใดถูกแนบ`;

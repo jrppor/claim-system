@@ -12,16 +12,16 @@ public sealed class FakeThumbnailGenerator : IThumbnailGenerator
     /// <summary>The Nth <see cref="CreateAsync"/> call from now answers "not a decodable image" (1 = the next one).</summary>
     public int? FailOnCallNumber { get; set; }
 
-    public async Task<byte[]?> CreateAsync(Stream image, string contentType, CancellationToken ct)
+    public async Task<ThumbnailResult> CreateAsync(Stream image, string contentType, CancellationToken ct)
     {
         if (FailOnCallNumber is { } n && ++_calls == n)
         {
             FailOnCallNumber = null;
             _calls = 0;
-            return null;
+            return new ThumbnailResult.Unreadable();
         }
         using var buffer = new MemoryStream();
         await image.CopyToAsync(buffer, ct);
-        return ThumbnailOf(buffer.Length);
+        return new ThumbnailResult.Created(ThumbnailOf(buffer.Length));
     }
 }

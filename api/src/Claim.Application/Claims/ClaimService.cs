@@ -35,9 +35,16 @@ public static class ClaimLimits
     public const int MaxTextLength = 2000;
 }
 
-public sealed class ClaimValidationException(IReadOnlyDictionary<string, string[]> errors) : Exception("Claim input is invalid.")
+public sealed class ClaimValidationException(IReadOnlyDictionary<string, string[]> errors, string? fileName = null) : Exception("Claim input is invalid.")
 {
     public IReadOnlyDictionary<string, string[]> Errors { get; } = errors;
+
+    /// <summary>The uploaded file the errors are about, when there is one; answered as the "fileName" member so clients need not parse text.</summary>
+    public string? FileName { get; } = fileName;
+
+    /// <summary>A rejected upload file: the reason is shown under field "file", prefixed with the file name for people reading the text.</summary>
+    public static ClaimValidationException ForFile(string fileName, string reason, string field = "file") =>
+        new(new Dictionary<string, string[]> { [field] = [$"{fileName}: {reason}"] }, fileName);
 }
 
 public sealed class ClaimService(IClaimRepository claims, IPolicyRepository policies, TimeProvider clock)
