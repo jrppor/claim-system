@@ -403,4 +403,36 @@ public class ClaimPhotoTests : IClassFixture<ApiFactory>
         var exact = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "wordy.jpg", new string('ก', 200))));
         Assert.Equal(HttpStatusCode.Created, exact.StatusCode);
     }
+
+    [Fact]
+    public async Task When_storing_the_second_of_three_files_fails_the_first_is_removed_and_no_row_or_history_is_left()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var filesBefore = _factory.Files.Names.ToHashSet();
+        _factory.Files.FailOnSaveNumber = 2;
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "a.jpg", null), (Jpeg, "b.jpg", null), (Jpeg, "c.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Empty(_factory.Files.Names.Except(filesBefore));
+        Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
+        Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
+    }
+
+    [Fact]
+    public async Task When_saving_the_rows_of_a_multi_file_upload_fails_every_stored_file_is_removed_and_no_row_is_left()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var filesBefore = _factory.Files.Names.ToHashSet();
+        _factory.Photos.FailNextAppend = true;
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "a.jpg", null), (Jpeg, "b.jpg", null), (Jpeg, "c.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Empty(_factory.Files.Names.Except(filesBefore));
+        Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
+        Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
+    }
 }
