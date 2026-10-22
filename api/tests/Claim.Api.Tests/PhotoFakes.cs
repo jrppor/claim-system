@@ -28,8 +28,16 @@ public sealed class FakeFileStorage : IFileStorage
         lock (_lock) return Task.FromResult<Stream?>(_files.TryGetValue(name, out var b) ? new MemoryStream(b) : null);
     }
 
+    /// <summary>Makes the next delete throw, as if the disk refused to remove the file.</summary>
+    public bool FailNextDelete { get; set; }
+
     public Task DeleteAsync(string name, CancellationToken ct)
     {
+        if (FailNextDelete)
+        {
+            FailNextDelete = false;
+            throw new IOException("disk failed");
+        }
         lock (_lock) _files.Remove(name);
         return Task.CompletedTask;
     }
@@ -61,9 +69,20 @@ public sealed class FakeClaimPhotoRepository : IClaimPhotoRepository
         }
     }
 
+    /// <summary>Makes the next <see cref="Remove"/> throw, as if the database failed while deleting a photo row.</summary>
+    public bool FailNextRemove { get; set; }
+
     public void Remove(long id)
     {
-        lock (_lock) _photos.RemoveAll(p => p.Id == id);
+        lock (_lock)
+        {
+            if (FailNextRemove)
+            {
+                FailNextRemove = false;
+                throw new InvalidOperationException("database failed");
+            }
+            _photos.RemoveAll(p => p.Id == id);
+        }
     }
 
     public Task<IReadOnlyList<ClaimPhoto>> ListAsync(long claimId, CancellationToken ct)

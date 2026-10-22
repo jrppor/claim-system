@@ -1,4 +1,5 @@
 using Claim.Domain.Claims;
+using Microsoft.Extensions.Logging;
 
 namespace Claim.Application.Claims;
 
@@ -8,7 +9,8 @@ public sealed class ClaimPhotoRemovalService(
     IClaimPhotoRepository photos,
     IUnitOfWork unitOfWork,
     IFileStorage storage,
-    TimeProvider clock)
+    TimeProvider clock,
+    ILogger<ClaimPhotoRemovalService> logger)
 {
     /// <summary>
     /// Removes the row and its Claim History line in one transaction, and only then the file: a failure before the commit leaves
@@ -22,10 +24,20 @@ public sealed class ClaimPhotoRemovalService(
         if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
         var photo = (await photos.ListAsync(claimId, ct)).FirstOrDefault(p => p.Id == photoId);
         if (photo is null) return null;
+        claim.EnsureVersion(expectedVersion);
 
         var entry = claim.RecordPhotoRemoved(photo.OriginalFileName, actorUserId, clock.GetUtcNow().UtcDateTime);
         await unitOfWork.RecordPhotoRemovedAsync(photo, claim, entry, ct);
-        await storage.DeleteAsync(photo.StoredName, ct);
+        try
+        {
+            await storage.DeleteAsync(photo.StoredName, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // The deletion is already committed; answering with an error would invite a retry that can only 404. The leftover
+            // file is unreferenced and harmless, but must be findable for cleanup.
+            logger.LogWarning(ex, "Claim {ClaimId} photo {PhotoId} was deleted but its stored file {StoredName} could not be removed", claimId, photoId, photo.StoredName);
+        }
         return ClaimVersion.Format(claim.RowVersion);
     }
 }

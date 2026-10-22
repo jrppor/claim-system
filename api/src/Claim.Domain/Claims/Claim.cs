@@ -144,6 +144,7 @@ public sealed class Claim
     /// <summary>Claim History line for a Claim Photo that was deleted; like <see cref="RecordPhotoAdded"/> the status stays as it is.</summary>
     public ClaimHistoryEntry RecordPhotoRemoved(string fileName, long actorUserId, DateTime now)
     {
+        EnsureAcceptsPhotoChange();
         UpdatedAt = now;
         return new ClaimHistoryEntry(Id, Status, Status, actorUserId, now, $"ลบรูปความเสียหาย: {fileName}");
     }
