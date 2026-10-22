@@ -15,6 +15,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   claimStatusLabels,
   describeStatusChangeError,
+  ifMatch,
   ProxyError,
   proxyFetch,
   type ClaimDetail,
@@ -57,7 +58,7 @@ export default function ClaimDetailPage() {
   });
   const queryClient = useQueryClient();
   const submit = useMutation({
-    mutationFn: () => proxyFetch<ClaimDetail>(`/claims/${id}/submit`, { method: "POST" }),
+    mutationFn: () => proxyFetch<ClaimDetail>(`/claims/${id}/submit`, { method: "POST", ...ifMatch(claim.data!) }),
     onSuccess: (updated) => {
       queryClient.setQueryData(["claim", id], updated);
       void queryClient.invalidateQueries({ queryKey: ["claim", id, "history"] });

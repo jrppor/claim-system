@@ -5,14 +5,19 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Claim.Api.Tests;
 
+/// <summary>
+/// In-memory Claims that behave like the SQL table: reads return copies, and every write compares the caller's RowVersion
+/// with the stored one (conflict -> <see cref="ConcurrencyException"/>), then bumps it, as SQL rowversion does.
+/// </summary>
 public sealed class FakeClaimRepository : IClaimRepository
 {
     private readonly Dictionary<long, Domain.Claims.Claim> _claims = [];
     private long _sequence;
     private long _nextId;
+    private long _version;
     private readonly object _lock = new();
 
-    public IReadOnlyCollection<Domain.Claims.Claim> All { get { lock (_lock) return _claims.Values.ToList(); } }
+    public IReadOnlyCollection<Domain.Claims.Claim> All { get { lock (_lock) return _claims.Values.Select(Copy).ToList(); } }
 
     public Task<long> NextClaimSequenceAsync(CancellationToken ct)
     {
@@ -25,13 +30,14 @@ public sealed class FakeClaimRepository : IClaimRepository
         {
             var stored = Domain.Claims.Claim.CreateDraft(claim.ClaimNumber, claim.PolicyId, claim.Details, claim.CreatedByUserId, claim.CreatedAt);
             var withId = CopyWithId(stored, ++_nextId);
+            withId.RowVersion = NextVersion();
             _claims[withId.Id] = withId;
             return Task.FromResult(withId.Id);
         }
     }
 
     /// <summary>Puts a Claim straight into the store in any status (the lifecycle endpoints arrive in later tickets).</summary>
-    public Domain.Claims.Claim Seed(Domain.Claims.ClaimStatus status, long policyId, long createdByUserId, string plate = "1กก 1234")
+    public Domain.Claims.Claim Seed(Domain.Claims.ClaimStatus status, long policyId, long createdByUserId, string plate = "1กก 1234", decimal? approvedAmount = null)
     {
         lock (_lock)
         {
@@ -43,18 +49,41 @@ public sealed class FakeClaimRepository : IClaimRepository
                 PolicyId = policyId,
                 CreatedByUserId = createdByUserId,
                 CreatedAt = DateTime.UtcNow,
+                RowVersion = NextVersion(),
             };
+            if (approvedAmount is { } amount) claim.RestoreApproval(amount, 1);
             _claims[id] = claim;
-            return claim;
+            return Copy(claim);
         }
     }
 
     public Task<Domain.Claims.Claim?> FindByIdAsync(long id, CancellationToken ct)
     {
-        lock (_lock) return Task.FromResult(_claims.GetValueOrDefault(id));
+        lock (_lock) return Task.FromResult(_claims.TryGetValue(id, out var c) ? Copy(c) : null);
     }
 
-    public Task UpdateAsync(Domain.Claims.Claim claim, CancellationToken ct) => Task.CompletedTask;
+    /// <summary>Like <c>UPDATE ... WHERE Id = @Id AND RowVersion = @RowVersion</c>: zero rows touched means a conflict.</summary>
+    public Task UpdateAsync(Domain.Claims.Claim claim, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            if (!_claims.TryGetValue(claim.Id, out var stored) || !stored.RowVersion.SequenceEqual(claim.RowVersion))
+                throw new ConcurrencyException($"Claim {claim.ClaimNumber} was changed by someone else after it was read.");
+            claim.RowVersion = NextVersion();
+            _claims[claim.Id] = Copy(claim);
+        }
+        return Task.CompletedTask;
+    }
+
+    private byte[] NextVersion() => BitConverter.GetBytes(++_version);
+
+    private static Domain.Claims.Claim Copy(Domain.Claims.Claim c)
+    {
+        var copy = CopyWithId(c, c.Id);
+        copy.RowVersion = (byte[])c.RowVersion.Clone();
+        if (c.ApprovedAmount is { } amount && c.ApprovedEstimateId is { } estimateId) copy.RestoreApproval(amount, estimateId);
+        return copy;
+    }
 
     private static Domain.Claims.Claim CopyWithId(Domain.Claims.Claim c, long id) =>
         new(c.Status, c.Details, c.UpdatedAt)

@@ -32,6 +32,9 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
     private Task<HttpClient> Staff() => As("staff@claim.test");
     private Task<HttpClient> Adjuster() => As("adjuster@claim.test");
 
+    /// <summary>The Claim as the store has it now (the object returned by Seed is only a copy of what was seeded).</summary>
+    private Domain.Claims.Claim Stored(Domain.Claims.Claim seeded) => _factory.Claims.FindByIdAsync(seeded.Id, default).Result!;
+
     private Domain.Claims.Claim SeedClaim(ClaimStatus status, long policyId = 1) => _factory.Claims.Seed(status, policyId, 1);
 
     private async Task<int> SubmitEstimate(long claimId, decimal unitPrice = 10_000m)
@@ -101,8 +104,8 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("approvedAmount", await response.Content.ReadAsStringAsync());
-        Assert.Equal(ClaimStatus.UnderReview, claim.Status);
-        Assert.Null(claim.ApprovedAmount);
+        Assert.Equal(ClaimStatus.UnderReview, Stored(claim).Status);
+        Assert.Null(Stored(claim).ApprovedAmount);
         Assert.Equal(historyBefore, _factory.History.All.Count(e => e.ClaimId == claim.Id));
     }
 
@@ -128,7 +131,7 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
         var response = await (await Adjuster()).PostAsJsonAsync($"/claims/{claim.Id}/approve", new { approvedAmount = 5_000m, reason });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(ClaimStatus.UnderReview, claim.Status);
+        Assert.Equal(ClaimStatus.UnderReview, Stored(claim).Status);
     }
 
     [Fact]
@@ -143,7 +146,7 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
 
         var stale = await adjuster.PostAsJsonAsync($"/claims/{claim.Id}/approve", new { approvedAmount = 5_000m, reason = "ok", revision = 1 });
         Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
-        Assert.Equal(ClaimStatus.UnderReview, claim.Status);
+        Assert.Equal(ClaimStatus.UnderReview, Stored(claim).Status);
 
         var current = await adjuster.PostAsJsonAsync($"/claims/{claim.Id}/approve", new { approvedAmount = 5_000m, reason = "ok", revision = 2 });
         Assert.Equal(HttpStatusCode.OK, current.StatusCode);
@@ -160,7 +163,7 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
         var response = await (await Adjuster()).PostAsJsonAsync($"/claims/{submitted.Id}/approve", new { approvedAmount = 5_000m, reason = "ok" });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal(ClaimStatus.Submitted, submitted.Status);
+        Assert.Equal(ClaimStatus.Submitted, Stored(submitted).Status);
     }
 
     [Fact]
@@ -173,7 +176,7 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
         var response = await adjuster.PostAsJsonAsync($"/claims/{claim.Id}/approve", new { approvedAmount = 5_000m, reason = "ok" });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal(ClaimStatus.UnderReview, claim.Status);
+        Assert.Equal(ClaimStatus.UnderReview, Stored(claim).Status);
     }
 
     [Fact]
@@ -200,7 +203,7 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
         var response = await (await Adjuster()).PostAsJsonAsync($"/claims/{claim.Id}/reject", new { reason = " " });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(ClaimStatus.UnderReview, claim.Status);
+        Assert.Equal(ClaimStatus.UnderReview, Stored(claim).Status);
     }
 
     [Fact]
@@ -222,7 +225,7 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
         };
 
         Assert.All(attempts, r => Assert.Equal(HttpStatusCode.Conflict, r.StatusCode));
-        Assert.Equal(ClaimStatus.Rejected, claim.Status);
+        Assert.Equal(ClaimStatus.Rejected, Stored(claim).Status);
         Assert.Equal(historyCount, _factory.History.All.Count(e => e.ClaimId == claim.Id));
     }
 
@@ -238,9 +241,9 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
         {
             var asked = await adjuster.PostAsJsonAsync($"/claims/{claim.Id}/request-changes", new { comments = $"ลดราคารอบ {round}" });
             Assert.Equal(HttpStatusCode.OK, asked.StatusCode);
-            Assert.Equal(ClaimStatus.ChangesRequested, claim.Status);
+            Assert.Equal(ClaimStatus.ChangesRequested, Stored(claim).Status);
             await SubmitEstimate(claim.Id, 10_000m - round * 1_000m);
-            Assert.Equal(ClaimStatus.UnderReview, claim.Status);
+            Assert.Equal(ClaimStatus.UnderReview, Stored(claim).Status);
         }
 
         var revisions = await adjuster.GetFromJsonAsync<JsonElement[]>($"/claims/{claim.Id}/estimates") ?? [];
@@ -265,7 +268,7 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
 
         var missing = await adjuster.PostAsJsonAsync($"/claims/{claim.Id}/request-changes", new { comments = "" });
         Assert.Equal(HttpStatusCode.BadRequest, missing.StatusCode);
-        Assert.Equal(ClaimStatus.UnderReview, claim.Status);
+        Assert.Equal(ClaimStatus.UnderReview, Stored(claim).Status);
 
         await adjuster.PostAsJsonAsync($"/claims/{claim.Id}/request-changes", new { comments = "ขอใบเสนอราคาอู่อื่นเทียบ" });
         var email = _factory.Outbox.Messages.Last(m => m.Message.ClaimId == claim.Id).Message;
@@ -290,7 +293,7 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
         };
 
         Assert.All(responses, r => Assert.Equal(HttpStatusCode.Forbidden, r.StatusCode));
-        Assert.Equal(ClaimStatus.UnderReview, claim.Status);
+        Assert.Equal(ClaimStatus.UnderReview, Stored(claim).Status);
         Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
     }
 
@@ -302,6 +305,6 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
         var response = await (await Adjuster()).PostAsync($"/claims/{draft.Id}/review", null);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Equal(ClaimStatus.Draft, draft.Status);
+        Assert.Equal(ClaimStatus.Draft, Stored(draft).Status);
     }
 }

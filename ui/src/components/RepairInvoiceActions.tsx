@@ -11,7 +11,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { availableRepairActions, describeRepairError, proxyFetch, type ClaimDetail, type Invoice } from "@/lib/claims";
+import { availableRepairActions, describeRepairError, ifMatch, proxyFetch, type ClaimDetail, type Invoice } from "@/lib/claims";
 
 const money = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -34,6 +34,7 @@ export function RepairInvoiceActions({ claim, role }: { claim: ClaimDetail; role
     mutationFn: async (request: { path: string; body?: unknown }) => {
       const result = await proxyFetch<ClaimDetail | Invoice>(`/claims/${claim.id}/${request.path}`, {
         method: "POST",
+        ...ifMatch(claim),
         body: request.body === undefined ? undefined : JSON.stringify(request.body),
       });
       // Submitting the Invoice answers with the Invoice; reload the Claim to get its new status.

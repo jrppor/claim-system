@@ -16,6 +16,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import {
   describeSaveError,
+  ifMatch,
   proxyFetch,
   type ClaimDetail,
   type ClaimInput,
@@ -124,7 +125,7 @@ export function ClaimForm({ claim }: Props) {
     mutationFn: (values: FormValues) => {
       const body: ClaimInput = { policyId: policy!.id, ...values };
       return claim
-        ? proxyFetch<ClaimDetail>(`/claims/${claim.id}`, { method: "PUT", body: JSON.stringify(body) })
+        ? proxyFetch<ClaimDetail>(`/claims/${claim.id}`, { method: "PUT", body: JSON.stringify(body), ...ifMatch(claim) })
         : proxyFetch<ClaimDetail>("/claims", { method: "POST", body: JSON.stringify(body) });
     },
     onSuccess: (saved) => {
