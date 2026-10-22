@@ -1,10 +1,7 @@
 using Claim.Api.Auth;
-using Claim.Api.Claims;
 using Claim.Api.Email;
 using Claim.Api.Http;
-using Claim.Api.Users;
 using Claim.Application;
-using Claim.Application.Health;
 using Claim.Infrastructure;
 using Serilog;
 
@@ -15,6 +12,11 @@ builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration
 builder.Services.AddApplication(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddEmailOutboxWorker(builder.Configuration);
+builder.Services.AddControllers(o =>
+{
+    // Request DTOs mark optional fields with `?`; the services report what is missing, not the model binder.
+    o.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true;
+});
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddEndpointsApiExplorer();
@@ -42,21 +44,7 @@ app.UseAuthorization();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.MapGet("/health", async (HealthService health, CancellationToken ct) =>
-{
-    var report = await health.CheckAsync(ct);
-    return report.IsHealthy
-        ? Results.Ok(report)
-        : Results.Problem(title: "Database unavailable", statusCode: StatusCodes.Status503ServiceUnavailable);
-})
-.WithName("Health")
-.WithTags("System");
-
-app.MapAuthEndpoints();
-app.MapClaimEndpoints();
-app.MapClaimStatusEndpoints();
-app.MapClaimListEndpoints();
-app.MapUserEndpoints();
+app.MapControllers();
 
 app.Run();
 
