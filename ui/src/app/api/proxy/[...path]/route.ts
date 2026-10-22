@@ -19,7 +19,10 @@ async function forward(request: Request, ctx: Ctx) {
   const { path } = await ctx.params;
   const search = new URL(request.url).search;
   const target = `${apiBase}/${path.map(encodeURIComponent).join("/")}${search}`;
-  const body = ["GET", "HEAD"].includes(request.method) ? undefined : await request.text();
+  // Raw bytes, not text: a multipart upload (Claim Photo) is binary and must reach the API byte for byte, with its
+  // original Content-Type (which carries the multipart boundary). Route handlers have no body-size limit of their own;
+  // the API enforces the 10 MB-per-photo rule.
+  const body = ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer();
 
   const jar = await cookies();
   let accessToken = jar.get(ACCESS_COOKIE)?.value;
@@ -51,7 +54,10 @@ async function forward(request: Request, ctx: Ctx) {
 
   const res = new NextResponse(upstream.status === 204 ? null : await upstream.arrayBuffer(), {
     status: upstream.status,
-    headers: { "Content-Type": upstream.headers.get("content-type") ?? "application/json" },
+    headers: {
+      "Content-Type": upstream.headers.get("content-type") ?? "application/json",
+      ...(upstream.headers.get("x-content-type-options") ? { "X-Content-Type-Options": upstream.headers.get("x-content-type-options")! } : {}),
+    },
   });
   if (refreshed) setSessionCookies(res, refreshed);
   else if (upstream.status === 401) clearSessionCookies(res);

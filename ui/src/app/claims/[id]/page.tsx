@@ -22,6 +22,7 @@ import {
   type ClaimHistoryEntry,
 } from "@/lib/claims";
 import { RepairEstimateSection } from "@/components/RepairEstimateSection";
+import { ClaimPhotoSection } from "@/components/ClaimPhotoSection";
 import { CancelClaimAction } from "@/components/CancelClaimAction";
 import { ReviewActions } from "@/components/ReviewActions";
 import { RepairInvoiceActions } from "@/components/RepairInvoiceActions";
@@ -134,6 +135,7 @@ export default function ClaimDetailPage() {
         </CardContent>
       </Card>
 
+      <ClaimPhotoSection claim={c} role={user?.role} />
       <RepairEstimateSection claim={c} role={user?.role} />
       <InvoiceSection claim={c} />
 

@@ -217,6 +217,54 @@ export async function proxyFetch<T>(path: string, init?: RequestInit): Promise<T
   return (await response.json()) as T;
 }
 
+/** A Claim Photo as the API lists it (metadata only; the bytes come from the file endpoint). */
+export interface ClaimPhoto {
+  id: number;
+  claimId: number;
+  originalFileName: string;
+  contentType: string;
+  sizeBytes: number;
+  caption: string | null;
+  uploadedByUserId: number;
+  uploadedAt: string;
+  /** The Claim's version after this photo was added (upload response only). */
+  version?: string;
+}
+
+/** Statuses in which Claim Photos can be added (mirrors ClaimLifecycle.AcceptsPhotoChange): locked from Approved on. */
+const photoEditableStatuses: ClaimStatus[] = ["Draft", "Submitted", "UnderReview", "ChangesRequested"];
+
+export const canChangePhotos = (role: string | undefined, status: ClaimStatus) => role === "GarageStaff" && photoEditableStatuses.includes(status);
+
+/** Sends a multipart form through the proxy. No Content-Type is set here: the browser adds it with the multipart boundary. */
+export async function proxyUpload<T>(path: string, form: FormData, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api/proxy${path}`, { method: "POST", cache: "no-store", body: form, ...init });
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => undefined)) as ProblemDetails | undefined;
+    throw new ProxyError(response.status, problem);
+  }
+  return (await response.json()) as T;
+}
+
+/** Fetches a file (photo bytes) through the proxy; the token stays in the httpOnly cookie, so it cannot be an <img src>. */
+export async function proxyBlob(path: string): Promise<Blob> {
+  const response = await fetch(`/api/proxy${path}`, { cache: "no-store" });
+  if (!response.ok) throw new ProxyError(response.status);
+  return await response.blob();
+}
+
+/** Thai message for a failed photo upload. */
+export function describePhotoUploadError(error: unknown): string {
+  if (isVersionConflict(error)) return versionConflictMessage;
+  if (error instanceof ProxyError) {
+    if (error.status === 400 || error.status === 413) return "ไฟล์ไม่ถูกต้อง รองรับเฉพาะรูป JPEG, PNG หรือ WebP ขนาดไม่เกิน 10 MB ต่อไฟล์";
+    if (error.status === 409) return "แนบรูปไม่ได้ เพราะสถานะของเคลมนี้ไม่อนุญาตให้เพิ่มรูปแล้ว";
+    if (error.status === 403) return "คุณไม่มีสิทธิ์แนบรูป";
+    if (error.status === 404) return "ไม่พบเคลมนี้";
+  }
+  return "แนบรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+}
+
 export type RepairAction = "startRepair" | "markRepaired" | "submitInvoice" | "confirmPayment";
 
 /**
