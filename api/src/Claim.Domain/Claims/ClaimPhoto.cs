@@ -24,6 +24,9 @@ public static class PhotoFormat
 {
     public const long MaxBytes = 10 * 1024 * 1024;
 
+    /// <summary>Most photos one Claim may hold.</summary>
+    public const int MaxPerClaim = 20;
+
     /// <summary>Enough leading bytes to tell every supported format apart.</summary>
     public const int HeaderLength = 12;
 

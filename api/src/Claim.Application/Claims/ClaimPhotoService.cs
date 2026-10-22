@@ -24,6 +24,7 @@ public sealed class ClaimPhotoService(
         claim.EnsureVersion(expectedVersion);
 
         claim.EnsureAcceptsPhotoChange();
+        claim.EnsureRoomForPhotos((await photos.ListAsync(claimId, ct)).Count, uploads.Count);
 
         var now = clock.GetUtcNow().UtcDateTime;
         var drafts = new List<ClaimPhoto>();

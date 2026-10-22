@@ -309,4 +309,62 @@ public class ClaimPhotoTests : IClassFixture<ApiFactory>
         var current = await staff.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}");
         Assert.All(created.EnumerateArray(), p => Assert.Equal(current.GetProperty("version").GetString(), p.GetProperty("version").GetString()));
     }
+
+    [Fact]
+    public async Task One_invalid_file_among_several_rejects_the_whole_request_naming_that_file()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var filesBefore = _factory.Files.Names.Count;
+        var notAnImage = "%PDF-1.7 not a picture"u8.ToArray();
+
+        var response = await (await Staff()).PostAsync($"/claims/{claim.Id}/photos",
+            UploadMany((Jpeg, "good1.jpg", null), (notAnImage, "bad.jpg", null), (Jpeg, "good2.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var reasons = problem.GetProperty("errors").GetProperty("file").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Contains(reasons, r => r!.Contains("bad.jpg"));
+        Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
+        Assert.Equal(filesBefore, _factory.Files.Names.Count);
+        Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
+    }
+
+    private async Task<HttpClient> StaffWithPhotos(Domain.Claims.Claim claim, int count)
+    {
+        var staff = await Staff();
+        var seeded = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany(Enumerable.Range(1, count).Select(i => (Jpeg, $"seed{i}.jpg", (string?)null)).ToArray()));
+        Assert.Equal(HttpStatusCode.Created, seeded.StatusCode);
+        return staff;
+    }
+
+    [Fact]
+    public async Task A_claim_with_20_photos_refuses_another_with_409_and_stores_nothing()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await StaffWithPhotos(claim, 20);
+        var filesBefore = _factory.Files.Names.Count;
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", Upload(Jpeg, "21st.jpg"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(20, _factory.Photos.All.Count(p => p.ClaimId == claim.Id));
+        Assert.Equal(filesBefore, _factory.Files.Names.Count);
+    }
+
+    [Fact]
+    public async Task A_request_that_would_go_over_20_is_refused_as_a_whole_but_one_that_reaches_exactly_20_is_accepted()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await StaffWithPhotos(claim, 18);
+        var filesBefore = _factory.Files.Names.Count;
+
+        var over = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "a.jpg", null), (Jpeg, "b.jpg", null), (Jpeg, "c.jpg", null)));
+        Assert.Equal(HttpStatusCode.Conflict, over.StatusCode);
+        Assert.Equal(18, _factory.Photos.All.Count(p => p.ClaimId == claim.Id));
+        Assert.Equal(filesBefore, _factory.Files.Names.Count);
+
+        var exact = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "a.jpg", null), (Jpeg, "b.jpg", null)));
+        Assert.Equal(HttpStatusCode.Created, exact.StatusCode);
+        Assert.Equal(20, _factory.Photos.All.Count(p => p.ClaimId == claim.Id));
+    }
 }
