@@ -135,8 +135,15 @@ public sealed class FakeInvoiceRepository : IInvoiceRepository
 
 public sealed class FakeUnitOfWork(
     FakeClaimRepository claims, FakeClaimHistoryRepository history, FakeEmailOutbox outbox, FakeRepairEstimateRepository estimates,
-    FakeInvoiceRepository invoices) : IUnitOfWork
+    FakeInvoiceRepository invoices, FakeClaimPhotoRepository photos) : IUnitOfWork
 {
+    public async Task<ClaimPhoto> RecordPhotoAsync(ClaimPhoto photo, Domain.Claims.Claim claim, ClaimHistoryEntry entry, CancellationToken ct)
+    {
+        var stored = photos.Append(photo);
+        await RecordStatusChangeAsync(claim, entry, null, ct);
+        return stored;
+    }
+
     public async Task<Invoice> RecordInvoiceAsync(Invoice invoice, Domain.Claims.Claim claim, ClaimHistoryEntry entry, EmailMessage? email, CancellationToken ct)
     {
         await RecordStatusChangeAsync(claim, entry, email, ct);

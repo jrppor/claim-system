@@ -119,6 +119,23 @@ public sealed class SqlUnitOfWork(string connectionString) : IUnitOfWork
         }, ct);
     }
 
+    public async Task<ClaimPhoto> RecordPhotoAsync(ClaimPhoto photo, ClaimEntity claim, ClaimHistoryEntry entry, CancellationToken ct)
+    {
+        return await InTransactionAsync(async (conn, tx) =>
+        {
+            var id = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
+                """
+                INSERT INTO dbo.ClaimPhotos (ClaimId, OriginalFileName, StoredName, ContentType, SizeBytes, Caption, UploadedByUserId, UploadedAt)
+                OUTPUT INSERTED.Id
+                VALUES (@ClaimId, @OriginalFileName, @StoredName, @ContentType, @SizeBytes, @Caption, @UploadedByUserId, @UploadedAt)
+                """,
+                new { photo.ClaimId, photo.OriginalFileName, photo.StoredName, photo.ContentType, photo.SizeBytes, photo.Caption, photo.UploadedByUserId, photo.UploadedAt },
+                tx, cancellationToken: ct));
+            await WriteStatusChangeAsync(conn, tx, claim, entry, null, ct);
+            return photo.Stored(id);
+        }, ct);
+    }
+
     /// <summary>Runs the work in one SQL transaction: committed when it returns, rolled back (by disposal) when it throws.</summary>
     private async Task<T> InTransactionAsync<T>(Func<SqlConnection, SqlTransaction, Task<T>> work, CancellationToken ct)
     {

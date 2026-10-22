@@ -13,7 +13,7 @@ public sealed partial class AutoVersionHandler : DelegatingHandler
 {
     private const string PlaceholderVersion = "AAAAAAAAAAA=";
 
-    [GeneratedRegex(@"^/claims/(\d+)(/(submit|review|approve|request-changes|reject|cancel|estimates|start-repair|mark-repaired|invoice|pay))?$")]
+    [GeneratedRegex(@"^/claims/(\d+)(/(submit|review|approve|request-changes|reject|cancel|estimates|start-repair|mark-repaired|invoice|pay|photos))?$")]
     private static partial Regex ClaimMutation();
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)

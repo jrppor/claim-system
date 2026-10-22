@@ -123,6 +123,16 @@ public sealed class Claim
         return entry;
     }
 
+    /// <summary>
+    /// Claim History line for a Claim Photo that was added. The status stays as it is (From and To are both the current status),
+    /// but UpdatedAt moves so the Claim row is rewritten and its version refreshed.
+    /// </summary>
+    public ClaimHistoryEntry RecordPhotoAdded(string fileName, long actorUserId, DateTime now)
+    {
+        UpdatedAt = now;
+        return new ClaimHistoryEntry(Id, Status, Status, actorUserId, now, $"อัปโหลดรูปความเสียหาย: {fileName}");
+    }
+
     /// <summary>Reloads a stored approval when the Claim is read back from the database.</summary>
     public void RestoreApproval(decimal approvedAmount, long estimateId)
     {
