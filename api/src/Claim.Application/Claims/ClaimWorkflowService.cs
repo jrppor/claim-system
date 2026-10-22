@@ -11,6 +11,7 @@ public sealed class ClaimWorkflowService(
     IUnitOfWork unitOfWork,
     IUserRepository users,
     IRepairEstimateRepository estimates,
+    IInvoiceRepository invoices,
     ClaimService claimService,
     TimeProvider clock)
 {
@@ -89,6 +90,54 @@ public sealed class ClaimWorkflowService(
     /// <summary>InRepair → Repaired: the work is done and the garage can invoice. Null when the Claim does not exist or the role may not see it.</summary>
     public async Task<ClaimDto?> MarkRepairedAsync(long id, long actorUserId, string actorRole, CancellationToken ct) =>
         await MoveAsync(id, ClaimStatus.Repaired, actorUserId, actorRole, ct);
+
+    /// <summary>InvoiceSubmitted → Paid (Closed): the Insurance Adjuster confirms payment. Null when the Claim does not exist or the role may not see it.</summary>
+    public async Task<ClaimDto?> ConfirmPaymentAsync(long id, string? reason, long actorUserId, string actorRole, CancellationToken ct)
+    {
+        var claim = await claims.FindByIdAsync(id, ct);
+        if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
+
+        reason = CleanReason(reason);
+        if (reason?.Length > 2000)
+            throw new ClaimValidationException(new Dictionary<string, string[]> { ["reason"] = ["The reason must be at most 2000 characters."] });
+
+        await ChangeStatusAsync(claim, ClaimStatus.Paid, actorUserId, reason, ct);
+        return await claimService.GetAsync(id, actorRole, ct);
+    }
+
+    /// <summary>Repaired → InvoiceSubmitted with the Invoice of the actual cost. Null when the Claim does not exist or the role may not see it.</summary>
+    public async Task<InvoiceDto?> SubmitInvoiceAsync(long id, InvoiceInput input, long actorUserId, string actorRole, CancellationToken ct)
+    {
+        var claim = await claims.FindByIdAsync(id, ct);
+        if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
+
+        var note = CleanReason(input.Note);
+        var errors = new Dictionary<string, string[]>();
+        if (input.ActualAmount is null or <= 0 or > 100_000_000 || HasMoreThanTwoDecimals(input.ActualAmount.Value))
+            errors["actualAmount"] = ["Invoice amount must be greater than 0 and at most 100000000 with at most 2 decimals."];
+        if (note?.Length > 2000) errors["note"] = ["Note must be at most 2000 characters."];
+        if (errors.Count > 0) throw new ClaimValidationException(errors);
+
+        var now = clock.GetUtcNow().UtcDateTime;
+        var entry = claim.ChangeStatus(ClaimStatus.InvoiceSubmitted, actorUserId, note, now);
+        var policy = (await policies.FindByIdAsync(claim.PolicyId, ct))!;
+        var draft = new Invoice(input.ActualAmount!.Value, note) { ClaimId = id, SubmittedByUserId = actorUserId, SubmittedAt = now };
+        var stored = await unitOfWork.RecordInvoiceAsync(draft, claim, entry, StatusEmailComposer.Compose(claim, policy, entry), ct);
+        return ToDto(stored, claim);
+    }
+
+    /// <summary>The Invoice next to the Approved Amount. Null when the Claim does not exist, the role may not see it, or no Invoice was submitted.</summary>
+    public async Task<InvoiceDto?> GetInvoiceAsync(long id, string role, CancellationToken ct)
+    {
+        var claim = await claims.FindByIdAsync(id, ct);
+        if (claim is null || !claim.IsVisibleTo(role)) return null;
+        var invoice = await invoices.FindByClaimAsync(id, ct);
+        return invoice is null ? null : ToDto(invoice, claim);
+    }
+
+    private static InvoiceDto ToDto(Invoice i, Domain.Claims.Claim claim) => new(
+        i.Id, i.ClaimId, i.ActualAmount, claim.ApprovedAmount, claim.ApprovedAmount is { } approved ? i.ActualAmount - approved : null,
+        i.Note, i.SubmittedByUserId, i.SubmittedAt);
 
     private async Task<ClaimDto?> MoveAsync(long id, ClaimStatus to, long actorUserId, string actorRole, CancellationToken ct)
     {

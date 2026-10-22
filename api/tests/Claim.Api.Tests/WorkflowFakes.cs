@@ -109,9 +109,40 @@ public sealed class FakeRepairEstimateRepository : IRepairEstimateRepository
     }
 }
 
-public sealed class FakeUnitOfWork(
-    FakeClaimRepository claims, FakeClaimHistoryRepository history, FakeEmailOutbox outbox, FakeRepairEstimateRepository estimates) : IUnitOfWork
+/// <summary>In-memory Invoices. Also what the fake Unit of Work appends to.</summary>
+public sealed class FakeInvoiceRepository : IInvoiceRepository
 {
+    private readonly List<Invoice> _invoices = [];
+    private readonly object _lock = new();
+
+    public IReadOnlyList<Invoice> All { get { lock (_lock) return _invoices.ToList(); } }
+
+    public Invoice Append(Invoice invoice)
+    {
+        lock (_lock)
+        {
+            var stored = invoice.Stored(_invoices.Count + 1);
+            _invoices.Add(stored);
+            return stored;
+        }
+    }
+
+    public Task<Invoice?> FindByClaimAsync(long claimId, CancellationToken ct)
+    {
+        lock (_lock) return Task.FromResult(_invoices.FirstOrDefault(i => i.ClaimId == claimId));
+    }
+}
+
+public sealed class FakeUnitOfWork(
+    FakeClaimRepository claims, FakeClaimHistoryRepository history, FakeEmailOutbox outbox, FakeRepairEstimateRepository estimates,
+    FakeInvoiceRepository invoices) : IUnitOfWork
+{
+    public async Task<Invoice> RecordInvoiceAsync(Invoice invoice, Domain.Claims.Claim claim, ClaimHistoryEntry entry, EmailMessage? email, CancellationToken ct)
+    {
+        await RecordStatusChangeAsync(claim, entry, email, ct);
+        return invoices.Append(invoice);
+    }
+
     public async Task<RepairEstimate> RecordEstimateAsync(
         RepairEstimate estimate, Domain.Claims.Claim? claim, ClaimHistoryEntry? entry, EmailMessage? email, CancellationToken ct)
     {
@@ -130,8 +161,10 @@ public sealed class FakeUnitOfWork(
 public static class WorkflowFakeRegistration
 {
     public static IServiceCollection ReplaceWorkflowStores(
-        this IServiceCollection services, FakeClaimHistoryRepository history, FakeUnitOfWork unitOfWork, FakeEmailOutbox outbox, FakeEmailSender sender, FakeRepairEstimateRepository estimates)
+        this IServiceCollection services, FakeClaimHistoryRepository history, FakeUnitOfWork unitOfWork, FakeEmailOutbox outbox, FakeEmailSender sender, FakeRepairEstimateRepository estimates, FakeInvoiceRepository invoices)
     {
+        services.RemoveAll<IInvoiceRepository>();
+        services.AddSingleton<IInvoiceRepository>(invoices);
         services.RemoveAll<IRepairEstimateRepository>();
         services.AddSingleton<IRepairEstimateRepository>(estimates);
         services.RemoveAll<IClaimHistoryRepository>();

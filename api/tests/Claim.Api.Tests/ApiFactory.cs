@@ -126,11 +126,12 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     public FakeEmailOutbox Outbox { get; } = new();
     public FakeEmailSender Mailbox { get; } = new();
     public FakeRepairEstimateRepository Estimates { get; } = new();
+    public FakeInvoiceRepository Invoices { get; } = new();
     public FakeUnitOfWork UnitOfWork { get; }
 
     public ApiFactory()
     {
-        UnitOfWork = new FakeUnitOfWork(Claims, History, Outbox, Estimates);
+        UnitOfWork = new FakeUnitOfWork(Claims, History, Outbox, Estimates, Invoices);
         Users.Add("staff@claim.test", Password, Role.GarageStaff);
         Users.Add("adjuster@claim.test", Password, Role.InsuranceAdjuster);
         Users.Add("admin@claim.test", Password, Role.Admin);
@@ -149,7 +150,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IRefreshTokenStore>();
             services.AddSingleton<IRefreshTokenStore>(RefreshTokens);
             services.ReplaceClaimRepositories(Policies, Claims);
-            services.ReplaceWorkflowStores(History, UnitOfWork, Outbox, Mailbox, Estimates);
+            services.ReplaceWorkflowStores(History, UnitOfWork, Outbox, Mailbox, Estimates, Invoices);
         });
     }
 }

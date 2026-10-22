@@ -201,6 +201,48 @@ export async function proxyFetch<T>(path: string, init?: RequestInit): Promise<T
   return (await response.json()) as T;
 }
 
+export type RepairAction = "startRepair" | "markRepaired" | "submitInvoice" | "confirmPayment";
+
+/**
+ * Repair, Invoice and payment actions from role and status (mirrors ClaimLifecycle):
+ * Garage Staff: Approved → InRepair → Repaired → InvoiceSubmitted; Insurance Adjuster confirms payment on InvoiceSubmitted. Paid has none.
+ */
+export function availableRepairActions(role: string | undefined, status: ClaimStatus): RepairAction[] {
+  if (role === "GarageStaff") {
+    if (status === "Approved") return ["startRepair"];
+    if (status === "InRepair") return ["markRepaired"];
+    if (status === "Repaired") return ["submitInvoice"];
+  }
+  if (role === "InsuranceAdjuster" && status === "InvoiceSubmitted") return ["confirmPayment"];
+  return [];
+}
+
+/** The garage's Invoice, with the Approved Amount beside it; difference = actualAmount - approvedAmount. */
+export interface Invoice {
+  id: number;
+  claimId: number;
+  actualAmount: number;
+  approvedAmount: number | null;
+  difference: number | null;
+  note: string | null;
+  submittedByUserId: number;
+  submittedAt: string;
+}
+
+/** Statuses from which an Invoice exists. */
+export const invoiceStatuses: readonly ClaimStatus[] = ["InvoiceSubmitted", "Paid"];
+
+/** Thai message for a failed repair, Invoice or payment action. */
+export function describeRepairError(error: unknown): string {
+  if (error instanceof ProxyError) {
+    if (error.status === 400) return "ยอดใบเรียกเก็บต้องมากกว่า 0 และมีทศนิยมไม่เกิน 2 ตำแหน่ง";
+    if (error.status === 409) return "ทำรายการไม่ได้ สถานะของเคลมนี้เปลี่ยนไปแล้ว กรุณารีเฟรชหน้า";
+    if (error.status === 403) return "คุณไม่มีสิทธิ์ทำรายการนี้";
+    if (error.status === 404) return "ไม่พบเคลมนี้";
+  }
+  return "ทำรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+}
+
 /** Thai message for a failed save (the API's own messages are English). */
 export function describeSaveError(error: unknown): string {
   if (error instanceof ProxyError) {

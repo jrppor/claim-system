@@ -16,6 +16,9 @@ public interface IUnitOfWork
     /// </summary>
     Task<RepairEstimate> RecordEstimateAsync(
         RepairEstimate estimate, Domain.Claims.Claim? claim, ClaimHistoryEntry? entry, EmailMessage? email, CancellationToken ct);
+
+    /// <summary>Stores the Invoice and moves the Claim to InvoiceSubmitted; Invoice, status, History line and email commit together.</summary>
+    Task<Invoice> RecordInvoiceAsync(Invoice invoice, Domain.Claims.Claim claim, ClaimHistoryEntry entry, EmailMessage? email, CancellationToken ct);
 }
 
 public interface IClaimHistoryRepository

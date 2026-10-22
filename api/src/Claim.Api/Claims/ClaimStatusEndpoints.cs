@@ -49,6 +49,37 @@ public static class ClaimStatusEndpoints
             await Decide(id, http, ct, (actor, role) => workflow.MarkRepairedAsync(id, actor, role, ct)))
             .RequireAuthorization(AuthPolicies.GarageStaff);
 
+        claims.MapPost("/{id:long}/invoice", async (long id, InvoiceInput input, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
+        {
+            try
+            {
+                var invoice = await workflow.SubmitInvoiceAsync(id, input, long.Parse(http.User.FindFirst("sub")!.Value), http.User.FindFirst("role")!.Value, ct);
+                return invoice is null ? NotFound(id) : Results.Created($"/claims/{id}/invoice", invoice);
+            }
+            catch (ClaimValidationException ex)
+            {
+                return Results.ValidationProblem(ex.Errors.ToDictionary(e => e.Key, e => e.Value));
+            }
+            catch (ClaimRuleException ex)
+            {
+                return InvalidTransition(ex);
+            }
+        }).RequireAuthorization(AuthPolicies.GarageStaff);
+
+        claims.MapGet("/{id:long}/invoice", async (long id, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
+        {
+            var invoice = await workflow.GetInvoiceAsync(id, http.User.FindFirst("role")!.Value, ct);
+            return invoice is null
+                ? Results.Problem(title: "Not Found", detail: $"Claim {id} has no Invoice.", statusCode: StatusCodes.Status404NotFound)
+                : Results.Ok(invoice);
+        }).RequireAuthorization();
+
+        claims.MapPost("/{id:long}/pay", async (long id, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
+        {
+            var body = await ReadOptionalBody(http, ct);
+            return await Decide(id, http, ct, (actor, role) => workflow.ConfirmPaymentAsync(id, body?.Reason, actor, role, ct));
+        }).RequireAuthorization(AuthPolicies.InsuranceAdjuster);
+
         claims.MapPost("/{id:long}/approve", async (long id, ApproveInput input, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
         {
             try
