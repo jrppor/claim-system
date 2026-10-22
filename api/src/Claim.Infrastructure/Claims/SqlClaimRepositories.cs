@@ -109,17 +109,20 @@ public sealed class SqlClaimRepository(string connectionString) : IClaimReposito
     public async Task UpdateAsync(ClaimEntity claim, CancellationToken ct)
     {
         await using var conn = new SqlConnection(connectionString);
-        await conn.ExecuteAsync(new CommandDefinition("""
+        var newVersion = await conn.ExecuteScalarAsync<byte[]?>(new CommandDefinition("""
             UPDATE dbo.Claims
             SET Status = @Status, VehiclePlate = @VehiclePlate, VehicleMake = @VehicleMake, VehicleModel = @VehicleModel,
                 CustomerEmail = @CustomerEmail, DamageDescription = @DamageDescription, UpdatedAt = @UpdatedAt
-            WHERE Id = @Id
+            OUTPUT INSERTED.RowVersion
+            WHERE Id = @Id AND RowVersion = @RowVersion
             """,
             new
             {
-                claim.Id, Status = claim.Status.ToString(),
+                claim.Id, claim.RowVersion, Status = claim.Status.ToString(),
                 claim.Details.VehiclePlate, claim.Details.VehicleMake, claim.Details.VehicleModel,
                 claim.Details.CustomerEmail, claim.Details.DamageDescription, claim.UpdatedAt,
             }, cancellationToken: ct));
+        // No row matched: the Claim was changed (new RowVersion) after the caller read it. A deleted Claim cannot happen (no delete).
+        claim.RowVersion = newVersion ?? throw new ConcurrencyException($"Claim {claim.ClaimNumber} was changed by someone else after it was read.");
     }
 }

@@ -9,7 +9,7 @@ import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import TextField from "@mui/material/TextField";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ProxyError, proxyFetch, type ClaimDetail, type ClaimStatus } from "@/lib/claims";
+import { ifMatch, isVersionConflict, ProxyError, proxyFetch, versionConflictMessage, type ClaimDetail, type ClaimStatus } from "@/lib/claims";
 
 /** Statuses from which Garage Staff may cancel (mirrors ClaimLifecycle: anything before Approved). */
 const cancellableStatuses: ClaimStatus[] = ["Draft", "Submitted", "UnderReview", "ChangesRequested"];
@@ -18,6 +18,7 @@ export const canCancelClaim = (role: string | undefined, status: ClaimStatus) =>
   role === "GarageStaff" && cancellableStatuses.includes(status);
 
 function describeCancelError(error: unknown): string {
+  if (isVersionConflict(error)) return versionConflictMessage;
   if (error instanceof ProxyError) {
     if (error.status === 400) return "กรุณากรอกเหตุผลในการยกเลิก";
     if (error.status === 409) return "ยกเลิกไม่ได้ เคลมนี้อนุมัติแล้วหรือสถานะเปลี่ยนไปแล้ว กรุณารีเฟรชหน้า";
@@ -35,7 +36,7 @@ export function CancelClaimAction({ claim, role }: { claim: ClaimDetail; role: s
 
   const cancel = useMutation({
     mutationFn: () =>
-      proxyFetch<ClaimDetail>(`/claims/${claim.id}/cancel`, { method: "POST", body: JSON.stringify({ reason: reason.trim() }) }),
+      proxyFetch<ClaimDetail>(`/claims/${claim.id}/cancel`, { method: "POST", body: JSON.stringify({ reason: reason.trim() }), ...ifMatch(claim) }),
     onSuccess: (updated) => {
       queryClient.setQueryData(["claim", String(claim.id)], updated);
       void queryClient.invalidateQueries({ queryKey: ["claim", String(claim.id)] });

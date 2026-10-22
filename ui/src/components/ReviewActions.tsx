@@ -14,6 +14,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   availableReviewActions,
   describeReviewError,
+  ifMatch,
   proxyFetch,
   type ClaimDetail,
   type RepairEstimate,
@@ -55,6 +56,7 @@ export function ReviewActions({ claim, role }: { claim: ClaimDetail; role: strin
     mutationFn: (request: { path: string; body?: unknown }) =>
       proxyFetch<ClaimDetail>(`/claims/${claim.id}/${request.path}`, {
         method: "POST",
+        ...ifMatch(claim),
         body: request.body === undefined ? undefined : JSON.stringify(request.body),
       }),
     onSuccess: (updated) => {

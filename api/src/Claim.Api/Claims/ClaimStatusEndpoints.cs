@@ -15,7 +15,7 @@ public static class ClaimStatusEndpoints
         {
             try
             {
-                var claim = await workflow.SubmitAsync(id, (await ReadOptionalBody(http, ct))?.Reason, long.Parse(http.User.FindFirst("sub")!.Value), http.User.FindFirst("role")!.Value, ct);
+                var claim = await workflow.SubmitAsync(id, (await ReadOptionalBody(http, ct))?.Reason, long.Parse(http.User.FindFirst("sub")!.Value), http.User.FindFirst("role")!.Value, ct, http.Request.ExpectedVersion());
                 return claim is null ? NotFound(id) : Results.Ok(claim);
             }
             catch (ClaimValidationException ex)
@@ -32,7 +32,7 @@ public static class ClaimStatusEndpoints
         {
             try
             {
-                var claim = await workflow.StartReviewAsync(id, long.Parse(http.User.FindFirst("sub")!.Value), http.User.FindFirst("role")!.Value, ct);
+                var claim = await workflow.StartReviewAsync(id, long.Parse(http.User.FindFirst("sub")!.Value), http.User.FindFirst("role")!.Value, ct, http.Request.ExpectedVersion());
                 return claim is null ? NotFound(id) : Results.Ok(claim);
             }
             catch (ClaimRuleException ex)
@@ -45,7 +45,7 @@ public static class ClaimStatusEndpoints
         {
             try
             {
-                var claim = await workflow.ApproveAsync(id, input, long.Parse(http.User.FindFirst("sub")!.Value), http.User.FindFirst("role")!.Value, ct);
+                var claim = await workflow.ApproveAsync(id, input, long.Parse(http.User.FindFirst("sub")!.Value), http.User.FindFirst("role")!.Value, ct, http.Request.ExpectedVersion());
                 return claim is null ? NotFound(id) : Results.Ok(claim);
             }
             catch (ClaimValidationException ex)
@@ -59,22 +59,22 @@ public static class ClaimStatusEndpoints
         }).RequireAuthorization(AuthPolicies.InsuranceAdjuster);
 
         claims.MapPost("/{id:long}/request-changes", async (long id, RequestChangesRequest body, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
-            await Decide(id, http, ct, (actor, role) => workflow.RequestChangesAsync(id, body.Comments, actor, role, ct)))
+            await Decide(id, http, ct, (actor, role) => workflow.RequestChangesAsync(id, body.Comments, actor, role, ct, http.Request.ExpectedVersion())))
             .RequireAuthorization(AuthPolicies.InsuranceAdjuster);
 
         claims.MapPost("/{id:long}/reject", async (long id, StatusChangeRequest body, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
-            await Decide(id, http, ct, (actor, role) => workflow.RejectAsync(id, body.Reason, actor, role, ct)))
+            await Decide(id, http, ct, (actor, role) => workflow.RejectAsync(id, body.Reason, actor, role, ct, http.Request.ExpectedVersion())))
             .RequireAuthorization(AuthPolicies.InsuranceAdjuster);
 
         claims.MapPost("/{id:long}/cancel", async (long id, StatusChangeRequest body, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
-            await Decide(id, http, ct, (actor, role) => workflow.CancelAsync(id, body.Reason, actor, role, ct)))
+            await Decide(id, http, ct, (actor, role) => workflow.CancelAsync(id, body.Reason, actor, role, ct, http.Request.ExpectedVersion())))
             .RequireAuthorization(AuthPolicies.GarageStaff);
 
         claims.MapPost("/{id:long}/estimates", async (long id, EstimateInput input, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
         {
             try
             {
-                var estimate = await workflow.SubmitEstimateAsync(id, input, long.Parse(http.User.FindFirst("sub")!.Value), ct);
+                var estimate = await workflow.SubmitEstimateAsync(id, input, long.Parse(http.User.FindFirst("sub")!.Value), ct, http.Request.ExpectedVersion());
                 return estimate is null ? NotFound(id) : Results.Created($"/claims/{id}/estimates", estimate);
             }
             catch (ClaimValidationException ex)

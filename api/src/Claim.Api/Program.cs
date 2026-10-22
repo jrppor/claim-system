@@ -51,6 +51,7 @@ app.UseExceptionHandler(errors => errors.Run(async ctx =>
         {
             Status = status,
             Title = title,
+            Type = ex is ConcurrencyException ? "urn:claim:version-conflict" : null,   // lets the UI tell this 409 from a forbidden status move
             Detail = status == 500 ? null : ex!.Message,
         },
     });

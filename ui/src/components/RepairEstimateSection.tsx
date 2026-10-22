@@ -25,6 +25,7 @@ import {
   describeEstimateError,
   estimateAcceptingStatuses,
   estimateLineKindLabels,
+  ifMatch,
   proxyFetch,
   type ClaimDetail,
   type EstimateLineKind,
@@ -122,6 +123,7 @@ function EstimateForm({ claim, onSubmitted }: { claim: ClaimDetail; onSubmitted:
     mutationFn: (values: FormValues) =>
       proxyFetch<RepairEstimate>(`/claims/${claim.id}/estimates`, {
         method: "POST",
+        ...ifMatch(claim),
         body: JSON.stringify({
           lines: values.lines.map((l) => ({
             kind: l.kind,

@@ -58,7 +58,20 @@ export interface ClaimDetail {
   /** What the Insurance Adjuster approved; null until approved. Separate from any Estimated Amount. */
   approvedAmount: number | null;
   approvedEstimateId: number | null;
+  /** Optimistic-concurrency token: send it back as `If-Match` (see ifMatch) on every change to this Claim. */
+  version: string;
 }
+
+/** Request options carrying the version of the Claim the user is looking at, so a change made on stale data is refused with 409. */
+export const ifMatch = (claim: { version: string }): Pick<RequestInit, "headers"> => ({ headers: { "If-Match": claim.version } });
+
+/** Problem `type` the API puts on a 409 caused by someone else changing the Claim first (as opposed to a forbidden status move). */
+export const versionConflictType = "urn:claim:version-conflict";
+
+export const isVersionConflict = (error: unknown) => error instanceof ProxyError && error.status === 409 && error.problem?.type === versionConflictType;
+
+/** Thai message for a concurrent-change conflict; the page reloads the Claim so the user can retry on fresh data. */
+export const versionConflictMessage = "เคลมนี้ถูกแก้ไขโดยผู้อื่นไปก่อนหน้า ระบบโหลดข้อมูลล่าสุดให้แล้ว กรุณาตรวจสอบแล้วทำรายการอีกครั้ง";
 
 export type ReviewAction = "pickup" | "approve" | "reject" | "requestChanges";
 
@@ -75,6 +88,7 @@ export function availableReviewActions(role: string | undefined, status: ClaimSt
 
 /** Thai message for a failed review action. */
 export function describeReviewError(error: unknown): string {
+  if (isVersionConflict(error)) return versionConflictMessage;
   if (error instanceof ProxyError) {
     if (error.status === 400) {
       const fields = Object.keys(error.problem?.errors ?? {});
@@ -137,6 +151,7 @@ export const estimateAcceptingStatuses: readonly ClaimStatus[] = ["Submitted", "
 
 /** Thai message for a failed Repair Estimate submission. */
 export function describeEstimateError(error: unknown): string {
+  if (isVersionConflict(error)) return versionConflictMessage;
   if (error instanceof ProxyError) {
     if (error.status === 400) return "ข้อมูลรายการไม่ถูกต้อง กรุณาตรวจสอบรายละเอียด จำนวน และราคาต่อหน่วย";
     if (error.status === 409) return "ส่งใบประเมินไม่ได้ เพราะสถานะของเคลมนี้ไม่รับใบประเมิน";
@@ -157,6 +172,7 @@ const fieldLabels: Record<string, string> = {
 
 /** Thai message for a failed status change, naming the missing details when the API lists them. */
 export function describeStatusChangeError(error: unknown): string {
+  if (isVersionConflict(error)) return versionConflictMessage;
   if (error instanceof ProxyError) {
     if (error.status === 400 && error.problem?.errors) {
       const missing = Object.keys(error.problem.errors).map((f) => fieldLabels[f] ?? f);
@@ -203,6 +219,7 @@ export async function proxyFetch<T>(path: string, init?: RequestInit): Promise<T
 
 /** Thai message for a failed save (the API's own messages are English). */
 export function describeSaveError(error: unknown): string {
+  if (isVersionConflict(error)) return versionConflictMessage;
   if (error instanceof ProxyError) {
     if (error.status === 409) return "แก้ไขไม่ได้ เพราะ Claim นี้ไม่ได้อยู่ในสถานะแบบร่างแล้ว";
     if (error.status === 400) return "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบอีเมลและรายละเอียดอีกครั้ง";

@@ -94,13 +94,17 @@ public sealed class SqlUnitOfWork(string connectionString) : IUnitOfWork
     private static async Task WriteStatusChangeAsync(
         SqlConnection conn, SqlTransaction tx, ClaimEntity claim, ClaimHistoryEntry entry, EmailMessage? email, CancellationToken ct)
     {
-        await conn.ExecuteAsync(new CommandDefinition(
+        // Optimistic concurrency for every transition: the row is written only if nobody changed it since the caller read it.
+        // When it is not, the exception unwinds past CommitAsync and the transaction (History, Outbox, estimate) rolls back.
+        var newVersion = await conn.ExecuteScalarAsync<byte[]?>(new CommandDefinition(
             """
             UPDATE dbo.Claims
             SET Status = @Status, UpdatedAt = @UpdatedAt, ApprovedAmount = @ApprovedAmount, ApprovedRepairEstimateId = @ApprovedEstimateId
-            WHERE Id = @Id
+            OUTPUT INSERTED.RowVersion
+            WHERE Id = @Id AND RowVersion = @RowVersion
             """,
-            new { claim.Id, Status = claim.Status.ToString(), claim.UpdatedAt, claim.ApprovedAmount, claim.ApprovedEstimateId }, tx, cancellationToken: ct));
+            new { claim.Id, claim.RowVersion, Status = claim.Status.ToString(), claim.UpdatedAt, claim.ApprovedAmount, claim.ApprovedEstimateId }, tx, cancellationToken: ct));
+        claim.RowVersion = newVersion ?? throw new ConcurrencyException($"Claim {claim.ClaimNumber} was changed by someone else after it was read.");
 
         await conn.ExecuteAsync(new CommandDefinition(
             """

@@ -31,6 +31,7 @@ async function forward(request: Request, ctx: Ctx) {
       method: request.method,
       headers: {
         ...(body !== undefined ? { "Content-Type": request.headers.get("content-type") ?? "application/json" } : {}),
+        ...(request.headers.get("if-match") ? { "If-Match": request.headers.get("if-match")! } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body,
