@@ -29,6 +29,12 @@ public sealed record ClaimDto(
     long? ApprovedEstimateId = null,
     string? Version = null);
 
+/// <summary>Limits shared by every free-text field a Claim carries (reason, comments, note, damage description).</summary>
+public static class ClaimLimits
+{
+    public const int MaxTextLength = 2000;
+}
+
 public sealed class ClaimValidationException(IReadOnlyDictionary<string, string[]> errors) : Exception("Claim input is invalid.")
 {
     public IReadOnlyDictionary<string, string[]> Errors { get; } = errors;
@@ -63,7 +69,7 @@ public sealed class ClaimService(IClaimRepository claims, IPolicyRepository poli
     }
 
     /// <summary>Edits a Draft. The Policy a Claim was opened under never changes. Returns null when the Claim does not exist.</summary>
-    public async Task<ClaimDto?> EditDraftAsync(long id, ClaimInput input, CancellationToken ct, byte[]? expectedVersion = null)
+    public async Task<ClaimDto?> EditDraftAsync(long id, ClaimInput input, byte[] expectedVersion, CancellationToken ct)
     {
         var errors = ValidateDetails(input);
         if (errors.Count > 0) throw new ClaimValidationException(errors);
@@ -71,7 +77,7 @@ public sealed class ClaimService(IClaimRepository claims, IPolicyRepository poli
         var claim = await claims.FindByIdAsync(id, ct);
         if (claim is null) return null;
 
-        claim.ExpectVersion(expectedVersion);
+        claim.EnsureVersion(expectedVersion);
         claim.EditDraft(ToDetails(input), clock.GetUtcNow().UtcDateTime);
         await claims.UpdateAsync(claim, ct);
         return await ToDtoAsync((await claims.FindByIdAsync(id, ct))!, ct);
@@ -85,7 +91,7 @@ public sealed class ClaimService(IClaimRepository claims, IPolicyRepository poli
         var errors = new Dictionary<string, string[]>();
         var email = Clean(input.CustomerEmail);
         if (email is not null && !IsEmail(email)) errors["customerEmail"] = ["Customer email is not a valid email address."];
-        if (Clean(input.DamageDescription)?.Length > 2000) errors["damageDescription"] = ["Damage description must be at most 2000 characters."];
+        if (Clean(input.DamageDescription)?.Length > ClaimLimits.MaxTextLength) errors["damageDescription"] = [$"Damage description must be at most {ClaimLimits.MaxTextLength} characters."];
         return errors;
     }
 

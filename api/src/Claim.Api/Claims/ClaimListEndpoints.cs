@@ -1,3 +1,4 @@
+using Claim.Api.Http;
 using Claim.Application.Claims;
 using Claim.Domain.Claims;
 
@@ -18,13 +19,11 @@ public static class ClaimListEndpoints
                     return Results.ValidationProblem(new Dictionary<string, string[]> { ["status"] = [$"Unknown status '{status}'."] });
                 parsed = s;
             }
-            return Results.Ok(await service.ListAsync(Role(http), search, parsed, page, pageSize, ct));
+            return Results.Ok(await service.ListAsync(Actor.From(http.User).Role, search, parsed, page, pageSize, ct));
         }).WithTags("Claims").RequireAuthorization();
 
         app.MapGet("/dashboard/summary", async (HttpContext http, ClaimListService service, CancellationToken ct) =>
-                Results.Ok(await service.SummaryAsync(Role(http), ct)))
+                Results.Ok(await service.SummaryAsync(Actor.From(http.User).Role, ct)))
             .WithTags("Dashboard").RequireAuthorization();
     }
-
-    private static string Role(HttpContext http) => http.User.FindFirst("role")!.Value;
 }

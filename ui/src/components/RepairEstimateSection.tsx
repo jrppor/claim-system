@@ -210,7 +210,10 @@ export function RepairEstimateSection({ claim, role }: { claim: ClaimDetail; rol
     queryFn: () => proxyFetch<RepairEstimate[]>(`/claims/${claim.id}/estimates`),
     enabled: claim.status !== "Draft" || role !== "InsuranceAdjuster",
   });
-  const canSubmit = role === "GarageStaff" && estimateAcceptingStatuses.includes(claim.status);
+  // UnderReview with no estimate yet: an Adjuster picked the Claim up first, and the garage must still be able to add one (mirrors ClaimLifecycle.AcceptsEstimate).
+  const canSubmit =
+    role === "GarageStaff" &&
+    (estimateAcceptingStatuses.includes(claim.status) || (claim.status === "UnderReview" && estimates.data?.length === 0));
 
   const refresh = (estimate: RepairEstimate) => {
     setNotice(estimate);

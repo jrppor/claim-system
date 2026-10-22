@@ -16,15 +16,15 @@ public sealed class ClaimWorkflowService(
     TimeProvider clock)
 {
     /// <summary>Draft → Submitted. Returns null when the Claim does not exist.</summary>
-    public async Task<ClaimDto?> SubmitAsync(long id, string? reason, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null)
+    public async Task<ClaimDto?> SubmitAsync(long id, string? reason, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct)
     {
         var claim = await claims.FindByIdAsync(id, ct);
         if (claim is null) return null;
-        claim.ExpectVersion(expectedVersion);
+        claim.EnsureVersion(expectedVersion);
 
         reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
         var errors = new Dictionary<string, string[]>();
-        if (reason?.Length > 2000) errors["reason"] = ["Reason must be at most 2000 characters."];
+        if (reason?.Length > ClaimLimits.MaxTextLength) errors["reason"] = [$"Reason must be at most {ClaimLimits.MaxTextLength} characters."];
         if (claim.Status == ClaimStatus.Draft)
             foreach (var field in claim.MissingForSubmission())
                 errors[field] = [$"{field} is required to submit a Claim."];
@@ -35,92 +35,94 @@ public sealed class ClaimWorkflowService(
     }
 
     /// <summary>Submitted → UnderReview: an Insurance Adjuster picks the Claim up. Returns null when the Claim does not exist or the role may not see it.</summary>
-    public async Task<ClaimDto?> StartReviewAsync(long id, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null)
+    public async Task<ClaimDto?> StartReviewAsync(long id, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct)
     {
         var claim = await claims.FindByIdAsync(id, ct);
         if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
 
-        claim.ExpectVersion(expectedVersion);
+        claim.EnsureVersion(expectedVersion);
         await ChangeStatusAsync(claim, ClaimStatus.UnderReview, actorUserId, null, ct);
         return await claimService.GetAsync(id, actorRole, ct);
     }
 
     /// <summary>UnderReview → Approved with an Approved Amount and reason. Returns null when the Claim does not exist or the role may not see it.</summary>
-    public async Task<ClaimDto?> ApproveAsync(long id, ApproveInput input, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null)
+    public async Task<ClaimDto?> ApproveAsync(long id, ApproveInput input, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct)
     {
         var claim = await claims.FindByIdAsync(id, ct);
         if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
+
+        claim.EnsureVersion(expectedVersion);
+
+        // State first (409), then the input (400): a client that is told its input is wrong should not find out afterwards
+        // that the Claim could not be approved anyway.
+        if (!ClaimLifecycle.CanMove(claim.Status, ClaimStatus.Approved))
+            throw new ClaimRuleException($"Claim {claim.ClaimNumber} is {claim.Status} and cannot move to {ClaimStatus.Approved}.");
+        var revisions = await estimates.ListAsync(id, ct);
+        var latest = revisions.MaxBy(e => e.Revision);
+        if (latest is null)
+            throw new ClaimRuleException($"Claim {claim.ClaimNumber} has no Repair Estimate to approve.");
+        if (input.Revision is { } revision && revision != latest.Revision)
+            throw new ClaimRuleException($"Revision {revision} is not the latest Repair Estimate (revision {latest.Revision}) of Claim {claim.ClaimNumber}.");
 
         var policy = (await policies.FindByIdAsync(claim.PolicyId, ct))!;
         var reason = CleanReason(input.Reason);
         var errors = new Dictionary<string, string[]>();
         if (reason is null) errors["reason"] = ["Reason is required to approve a Claim."];
-        else if (reason.Length > 2000) errors["reason"] = ["Reason must be at most 2000 characters."];
+        else if (reason.Length > ClaimLimits.MaxTextLength) errors["reason"] = [$"Reason must be at most {ClaimLimits.MaxTextLength} characters."];
         if (input.ApprovedAmount is null or <= 0 || HasMoreThanTwoDecimals(input.ApprovedAmount.Value))
             errors["approvedAmount"] = ["Approved Amount must be greater than 0 with at most 2 decimals."];
         else if (input.ApprovedAmount > policy.CoverageLimit)
             errors["approvedAmount"] = [$"Approved Amount {input.ApprovedAmount:0.00} exceeds the Policy Coverage Limit {policy.CoverageLimit:0.00}."];
         if (errors.Count > 0) throw new ClaimValidationException(errors);
 
-        var revisions = await estimates.ListAsync(id, ct);
-        var latest = revisions.MaxBy(e => e.Revision);
-        if (claim.Status == ClaimStatus.UnderReview)
-        {
-            if (latest is null)
-                throw new ClaimRuleException($"Claim {claim.ClaimNumber} has no Repair Estimate to approve.");
-            if (input.Revision is { } revision && revision != latest.Revision)
-                throw new ClaimRuleException($"Revision {revision} is not the latest Repair Estimate (revision {latest.Revision}) of Claim {claim.ClaimNumber}.");
-        }
-
-        claim.ExpectVersion(expectedVersion);
-        var entry = claim.Approve(input.ApprovedAmount!.Value, policy.CoverageLimit, latest?.Id ?? 0, actorUserId, reason!, clock.GetUtcNow().UtcDateTime);
+        var entry = claim.Approve(input.ApprovedAmount!.Value, policy.CoverageLimit, latest.Id, actorUserId, reason!, clock.GetUtcNow().UtcDateTime);
         await unitOfWork.RecordStatusChangeAsync(claim, entry, StatusEmailComposer.Compose(claim, policy, entry), ct);
         return await claimService.GetAsync(id, actorRole, ct);
     }
 
     /// <summary>UnderReview → ChangesRequested with the Adjuster's comments (kept as the History reason). Null when the Claim does not exist or the role may not see it.</summary>
-    public async Task<ClaimDto?> RequestChangesAsync(long id, string? comments, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null) =>
-        await DecideAsync(id, ClaimStatus.ChangesRequested, "comments", comments, actorUserId, actorRole, ct, expectedVersion);
+    public async Task<ClaimDto?> RequestChangesAsync(long id, string? comments, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct) =>
+        await DecideAsync(id, ClaimStatus.ChangesRequested, "comments", comments, actorUserId, actorRole, expectedVersion, ct);
 
     /// <summary>UnderReview → Rejected, a final status, with a reason. Null when the Claim does not exist or the role may not see it.</summary>
-    public async Task<ClaimDto?> RejectAsync(long id, string? reason, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null) =>
-        await DecideAsync(id, ClaimStatus.Rejected, "reason", reason, actorUserId, actorRole, ct, expectedVersion);
+    public async Task<ClaimDto?> RejectAsync(long id, string? reason, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct) =>
+        await DecideAsync(id, ClaimStatus.Rejected, "reason", reason, actorUserId, actorRole, expectedVersion, ct);
 
     /// <summary>Approved → InRepair: the garage begins the repair. Null when the Claim does not exist or the role may not see it.</summary>
-    public async Task<ClaimDto?> StartRepairAsync(long id, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null) =>
-        await MoveAsync(id, ClaimStatus.InRepair, actorUserId, actorRole, ct, expectedVersion);
+    public async Task<ClaimDto?> StartRepairAsync(long id, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct) =>
+        await MoveAsync(id, ClaimStatus.InRepair, actorUserId, actorRole, expectedVersion, ct);
 
     /// <summary>InRepair → Repaired: the work is done and the garage can invoice. Null when the Claim does not exist or the role may not see it.</summary>
-    public async Task<ClaimDto?> MarkRepairedAsync(long id, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null) =>
-        await MoveAsync(id, ClaimStatus.Repaired, actorUserId, actorRole, ct, expectedVersion);
+    public async Task<ClaimDto?> MarkRepairedAsync(long id, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct) =>
+        await MoveAsync(id, ClaimStatus.Repaired, actorUserId, actorRole, expectedVersion, ct);
 
     /// <summary>InvoiceSubmitted → Paid (Closed): the Insurance Adjuster confirms payment. Null when the Claim does not exist or the role may not see it.</summary>
-    public async Task<ClaimDto?> ConfirmPaymentAsync(long id, string? reason, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null)
+    public async Task<ClaimDto?> ConfirmPaymentAsync(long id, string? reason, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct)
     {
         var claim = await claims.FindByIdAsync(id, ct);
         if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
-        claim.ExpectVersion(expectedVersion);
+        claim.EnsureVersion(expectedVersion);
 
         reason = CleanReason(reason);
-        if (reason?.Length > 2000)
-            throw new ClaimValidationException(new Dictionary<string, string[]> { ["reason"] = ["The reason must be at most 2000 characters."] });
+        if (reason?.Length > ClaimLimits.MaxTextLength)
+            throw new ClaimValidationException(new Dictionary<string, string[]> { ["reason"] = [$"The reason must be at most {ClaimLimits.MaxTextLength} characters."] });
 
         await ChangeStatusAsync(claim, ClaimStatus.Paid, actorUserId, reason, ct);
         return await claimService.GetAsync(id, actorRole, ct);
     }
 
     /// <summary>Repaired → InvoiceSubmitted with the Invoice of the actual cost. Null when the Claim does not exist or the role may not see it.</summary>
-    public async Task<InvoiceDto?> SubmitInvoiceAsync(long id, InvoiceInput input, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null)
+    public async Task<InvoiceDto?> SubmitInvoiceAsync(long id, InvoiceInput input, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct)
     {
         var claim = await claims.FindByIdAsync(id, ct);
         if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
-        claim.ExpectVersion(expectedVersion);
+        claim.EnsureVersion(expectedVersion);
 
         var note = CleanReason(input.Note);
         var errors = new Dictionary<string, string[]>();
         if (input.ActualAmount is null or <= 0 or > 100_000_000 || HasMoreThanTwoDecimals(input.ActualAmount.Value))
             errors["actualAmount"] = ["Invoice amount must be greater than 0 and at most 100000000 with at most 2 decimals."];
-        if (note?.Length > 2000) errors["note"] = ["Note must be at most 2000 characters."];
+        if (note?.Length > ClaimLimits.MaxTextLength) errors["note"] = [$"Note must be at most {ClaimLimits.MaxTextLength} characters."];
         if (errors.Count > 0) throw new ClaimValidationException(errors);
 
         var now = clock.GetUtcNow().UtcDateTime;
@@ -144,30 +146,30 @@ public sealed class ClaimWorkflowService(
         i.Id, i.ClaimId, i.ActualAmount, claim.ApprovedAmount, claim.ApprovedAmount is { } approved ? i.ActualAmount - approved : null,
         i.Note, i.SubmittedByUserId, i.SubmittedAt);
 
-    private async Task<ClaimDto?> MoveAsync(long id, ClaimStatus to, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion)
+    private async Task<ClaimDto?> MoveAsync(long id, ClaimStatus to, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct)
     {
         var claim = await claims.FindByIdAsync(id, ct);
         if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
-        claim.ExpectVersion(expectedVersion);
+        claim.EnsureVersion(expectedVersion);
 
         await ChangeStatusAsync(claim, to, actorUserId, null, ct);
         return await claimService.GetAsync(id, actorRole, ct);
     }
 
     /// <summary>Garage Staff cancels a Claim before it is Approved, with a reason. Null when the Claim does not exist.</summary>
-    public async Task<ClaimDto?> CancelAsync(long id, string? reason, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null) =>
-        await DecideAsync(id, ClaimStatus.Cancelled, "reason", reason, actorUserId, actorRole, ct, expectedVersion);
+    public async Task<ClaimDto?> CancelAsync(long id, string? reason, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct) =>
+        await DecideAsync(id, ClaimStatus.Cancelled, "reason", reason, actorUserId, actorRole, expectedVersion, ct);
 
-    private async Task<ClaimDto?> DecideAsync(long id, ClaimStatus to, string field, string? text, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion)
+    private async Task<ClaimDto?> DecideAsync(long id, ClaimStatus to, string field, string? text, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct)
     {
         var claim = await claims.FindByIdAsync(id, ct);
         if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
+        claim.EnsureVersion(expectedVersion);
 
         text = CleanReason(text);
         if (text is null) throw new ClaimValidationException(new Dictionary<string, string[]> { [field] = [$"A {field} is required."] });
-        if (text.Length > 2000) throw new ClaimValidationException(new Dictionary<string, string[]> { [field] = [$"The {field} must be at most 2000 characters."] });
+        if (text.Length > ClaimLimits.MaxTextLength) throw new ClaimValidationException(new Dictionary<string, string[]> { [field] = [$"The {field} must be at most {ClaimLimits.MaxTextLength} characters."] });
 
-        claim.ExpectVersion(expectedVersion);
         await ChangeStatusAsync(claim, to, actorUserId, text, ct);
         return await claimService.GetAsync(id, actorRole, ct);
     }
@@ -175,17 +177,14 @@ public sealed class ClaimWorkflowService(
     private static string? CleanReason(string? reason) => string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
 
     /// <summary>Creates the next Repair Estimate revision. Returns null when the Claim does not exist.</summary>
-    public async Task<RepairEstimateDto?> SubmitEstimateAsync(long id, EstimateInput input, long actorUserId, CancellationToken ct, byte[]? expectedVersion = null)
+    public async Task<RepairEstimateDto?> SubmitEstimateAsync(long id, EstimateInput input, long actorUserId, byte[] expectedVersion, CancellationToken ct)
     {
         var claim = await claims.FindByIdAsync(id, ct);
         if (claim is null) return null;
-        // A revision that leaves the Claim in Submitted writes no Claims row, so the Unit of Work cannot catch a stale version: check here.
-        if (expectedVersion is not null && !claim.RowVersion.AsSpan().SequenceEqual(expectedVersion))
-            throw new ConcurrencyException($"Claim {claim.ClaimNumber} was changed by someone else after it was read.");
-        claim.ExpectVersion(expectedVersion);
+        claim.EnsureVersion(expectedVersion);
         var errors = ValidateEstimate(input);
         if (errors.Count > 0) throw new ClaimValidationException(errors);
-        claim.EnsureAcceptsEstimate();
+        claim.EnsureAcceptsEstimate(hasEstimate: (await estimates.ListAsync(id, ct)).Count > 0);
         var policy = (await policies.FindByIdAsync(claim.PolicyId, ct))!;
 
         var lines = input.Lines!.Select(l => new EstimateLine(Enum.Parse<EstimateLineKind>(l.Kind!), l.Description!.Trim(), l.Quantity!.Value, l.UnitPrice!.Value)).ToList();
@@ -193,7 +192,7 @@ public sealed class ClaimWorkflowService(
         var draft = new RepairEstimate(lines) { ClaimId = id, SubmittedByUserId = actorUserId, SubmittedAt = now };
 
         // After ChangesRequested the garage has answered: the Claim goes back under review in the same transaction as the new
-        // revision. From Submitted no Adjuster has picked it up yet, so only the revision is stored.
+        // revision. From Submitted (no Adjuster yet) or UnderReview (picked up before any estimate existed) only the revision is stored.
         ClaimHistoryEntry? entry = null;
         EmailMessage? email = null;
         if (claim.Status == ClaimStatus.ChangesRequested)

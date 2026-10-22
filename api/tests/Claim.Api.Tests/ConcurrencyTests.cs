@@ -27,7 +27,7 @@ public class ConcurrencyTests : IClassFixture<ApiFactory>
     {
         var response = await _anonymous.PostAsJsonAsync("/auth/login", new { email, password = ApiFactory.Password });
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateVersionedClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", body.GetProperty("accessToken").GetString());
         return client;
     }

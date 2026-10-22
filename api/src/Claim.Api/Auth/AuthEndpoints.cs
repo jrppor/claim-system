@@ -1,3 +1,4 @@
+using Claim.Api.Http;
 using Claim.Application.Auth;
 using Microsoft.AspNetCore.Mvc;
 
@@ -43,8 +44,7 @@ public static class AuthEndpoints
 
         auth.MapGet("/me", async (HttpContext http, AuthService service, CancellationToken ct) =>
         {
-            var sub = http.User.FindFirst("sub")?.Value;
-            var user = long.TryParse(sub, out var id) ? await service.GetUserAsync(id, ct) : null;
+            var user = await service.GetUserAsync(Actor.From(http.User).UserId, ct);
             return user is null ? Results.Unauthorized() : Results.Ok(user);
         }).RequireAuthorization();
     }

@@ -64,62 +64,70 @@ public sealed class SqlUnitOfWork(string connectionString) : IUnitOfWork
 {
     public async Task RecordStatusChangeAsync(ClaimEntity claim, ClaimHistoryEntry entry, EmailMessage? email, CancellationToken ct)
     {
-        await using var conn = new SqlConnection(connectionString);
-        await conn.OpenAsync(ct);
-        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(ct);
-        await WriteStatusChangeAsync(conn, tx, claim, entry, email, ct);
-        await tx.CommitAsync(ct);
+        await InTransactionAsync(async (conn, tx) =>
+        {
+            await WriteStatusChangeAsync(conn, tx, claim, entry, email, ct);
+            return 0;
+        }, ct);
     }
 
     public async Task<RepairEstimate> RecordEstimateAsync(
         RepairEstimate estimate, ClaimEntity? claim, ClaimHistoryEntry? entry, EmailMessage? email, CancellationToken ct)
     {
-        await using var conn = new SqlConnection(connectionString);
-        await conn.OpenAsync(ct);
-        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(ct);
-
-        // Next revision is read under UPDLOCK/HOLDLOCK so two concurrent submissions cannot take the same number
-        // (UQ_RepairEstimates_ClaimRevision is the backstop).
-        var revision = await conn.ExecuteScalarAsync<int>(new CommandDefinition(
-            "SELECT ISNULL(MAX(Revision), 0) + 1 FROM dbo.RepairEstimates WITH (UPDLOCK, HOLDLOCK) WHERE ClaimId = @ClaimId",
-            new { estimate.ClaimId }, tx, cancellationToken: ct));
-        var id = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
-            """
-            INSERT INTO dbo.RepairEstimates (ClaimId, Revision, EstimatedAmount, SubmittedByUserId, SubmittedAt)
-            OUTPUT INSERTED.Id
-            VALUES (@ClaimId, @revision, @EstimatedAmount, @SubmittedByUserId, @SubmittedAt)
-            """,
-            new { estimate.ClaimId, revision, estimate.EstimatedAmount, estimate.SubmittedByUserId, estimate.SubmittedAt }, tx, cancellationToken: ct));
-        var lineNumber = 0;
-        foreach (var line in estimate.Lines)
-            await conn.ExecuteAsync(new CommandDefinition(
+        return await InTransactionAsync(async (conn, tx) =>
+        {
+            // Next revision is read under UPDLOCK/HOLDLOCK so two concurrent submissions cannot take the same number
+            // (UQ_RepairEstimates_ClaimRevision is the backstop).
+            var revision = await conn.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT ISNULL(MAX(Revision), 0) + 1 FROM dbo.RepairEstimates WITH (UPDLOCK, HOLDLOCK) WHERE ClaimId = @ClaimId",
+                new { estimate.ClaimId }, tx, cancellationToken: ct));
+            var id = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
                 """
-                INSERT INTO dbo.RepairEstimateLines (RepairEstimateId, LineNumber, Kind, Description, Quantity, UnitPrice, LineTotal)
-                VALUES (@id, @lineNumber, @Kind, @Description, @Quantity, @UnitPrice, @LineTotal)
+                INSERT INTO dbo.RepairEstimates (ClaimId, Revision, EstimatedAmount, SubmittedByUserId, SubmittedAt)
+                OUTPUT INSERTED.Id
+                VALUES (@ClaimId, @revision, @EstimatedAmount, @SubmittedByUserId, @SubmittedAt)
                 """,
-                new { id, lineNumber = ++lineNumber, Kind = line.Kind.ToString(), line.Description, line.Quantity, line.UnitPrice, line.LineTotal },
-                tx, cancellationToken: ct));
+                new { estimate.ClaimId, revision, estimate.EstimatedAmount, estimate.SubmittedByUserId, estimate.SubmittedAt }, tx, cancellationToken: ct));
+            var lineNumber = 0;
+            foreach (var line in estimate.Lines)
+                await conn.ExecuteAsync(new CommandDefinition(
+                    """
+                    INSERT INTO dbo.RepairEstimateLines (RepairEstimateId, LineNumber, Kind, Description, Quantity, UnitPrice, LineTotal)
+                    VALUES (@id, @lineNumber, @Kind, @Description, @Quantity, @UnitPrice, @LineTotal)
+                    """,
+                    new { id, lineNumber = ++lineNumber, Kind = line.Kind.ToString(), line.Description, line.Quantity, line.UnitPrice, line.LineTotal },
+                    tx, cancellationToken: ct));
 
-        if (claim is not null && entry is not null) await WriteStatusChangeAsync(conn, tx, claim, entry, email, ct);
-        await tx.CommitAsync(ct);
-        return estimate.Stored(id, revision);
+            if (claim is not null && entry is not null) await WriteStatusChangeAsync(conn, tx, claim, entry, email, ct);
+            return estimate.Stored(id, revision);
+        }, ct);
     }
 
     public async Task<Invoice> RecordInvoiceAsync(Invoice invoice, ClaimEntity claim, ClaimHistoryEntry entry, EmailMessage? email, CancellationToken ct)
     {
+        return await InTransactionAsync(async (conn, tx) =>
+        {
+            var id = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
+                """
+                INSERT INTO dbo.Invoices (ClaimId, ActualAmount, Note, SubmittedByUserId, SubmittedAt)
+                OUTPUT INSERTED.Id
+                VALUES (@ClaimId, @ActualAmount, @Note, @SubmittedByUserId, @SubmittedAt)
+                """,
+                new { invoice.ClaimId, invoice.ActualAmount, invoice.Note, invoice.SubmittedByUserId, invoice.SubmittedAt }, tx, cancellationToken: ct));
+            await WriteStatusChangeAsync(conn, tx, claim, entry, email, ct);
+            return invoice.Stored(id);
+        }, ct);
+    }
+
+    /// <summary>Runs the work in one SQL transaction: committed when it returns, rolled back (by disposal) when it throws.</summary>
+    private async Task<T> InTransactionAsync<T>(Func<SqlConnection, SqlTransaction, Task<T>> work, CancellationToken ct)
+    {
         await using var conn = new SqlConnection(connectionString);
         await conn.OpenAsync(ct);
         await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(ct);
-        var id = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
-            """
-            INSERT INTO dbo.Invoices (ClaimId, ActualAmount, Note, SubmittedByUserId, SubmittedAt)
-            OUTPUT INSERTED.Id
-            VALUES (@ClaimId, @ActualAmount, @Note, @SubmittedByUserId, @SubmittedAt)
-            """,
-            new { invoice.ClaimId, invoice.ActualAmount, invoice.Note, invoice.SubmittedByUserId, invoice.SubmittedAt }, tx, cancellationToken: ct));
-        await WriteStatusChangeAsync(conn, tx, claim, entry, email, ct);
+        var result = await work(conn, tx);
         await tx.CommitAsync(ct);
-        return invoice.Stored(id);
+        return result;
     }
 
     private static async Task WriteStatusChangeAsync(
@@ -135,7 +143,7 @@ public sealed class SqlUnitOfWork(string connectionString) : IUnitOfWork
             WHERE Id = @Id AND RowVersion = @RowVersion
             """,
             new { claim.Id, claim.RowVersion, Status = claim.Status.ToString(), claim.UpdatedAt, claim.ApprovedAmount, claim.ApprovedEstimateId }, tx, cancellationToken: ct));
-        claim.RowVersion = newVersion ?? throw new ConcurrencyException($"Claim {claim.ClaimNumber} was changed by someone else after it was read.");
+        claim.RowVersion = newVersion ?? throw new ConcurrencyException(claim.ClaimNumber);
 
         await conn.ExecuteAsync(new CommandDefinition(
             """

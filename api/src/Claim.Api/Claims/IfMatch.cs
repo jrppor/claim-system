@@ -4,14 +4,15 @@ namespace Claim.Api.Claims;
 
 /// <summary>
 /// Reads the version a client read from the `If-Match` header (the Claim JSON's `version`, quoted or not).
-/// Absent or `*` means the client did not say, so no stale-version check is made against it.
+/// The version is mandatory for every request that changes a Claim: absent → 428, and `*` ("any version") is not accepted,
+/// so a client can never overwrite a Claim it has not seen.
 /// </summary>
 public static class IfMatch
 {
-    public static byte[]? ExpectedVersion(this HttpRequest request)
+    public static byte[] RequiredVersion(this HttpRequest request)
     {
         var header = request.Headers.IfMatch.ToString().Trim();
-        if (header.Length == 0 || header == "*") return null;
+        if (header.Length == 0 || header == "*") throw new VersionRequiredException();
         return ClaimVersion.Parse(header.Trim('"'));
     }
 }

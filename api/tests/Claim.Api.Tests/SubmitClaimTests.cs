@@ -20,7 +20,7 @@ public class SubmitClaimTests : IClassFixture<ApiFactory>
     {
         var login = await _factory.CreateClient().PostAsJsonAsync("/auth/login", new { email, password = ApiFactory.Password });
         var body = await login.Content.ReadFromJsonAsync<JsonElement>();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateVersionedClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", body.GetProperty("accessToken").GetString());
         return client;
@@ -123,10 +123,11 @@ public class SubmitClaimTests : IClassFixture<ApiFactory>
 
         await staff.PostAsync($"/claims/{id}/submit", null);
 
-        await Eventually(() => _factory.Mailbox.Sent.Any(m => m.ClaimId == id));
+        await _factory.DispatchEmailsAsync();
+
         var sent = Assert.Single(_factory.Mailbox.Sent, m => m.ClaimId == id);
         Assert.Equal("customer-c@claim.test", sent.ToAddress);
-        await Eventually(() => _factory.Outbox.Messages.Single(m => m.Message.ClaimId == id).SentAt is not null);
+        Assert.NotNull(_factory.Outbox.Messages.Single(m => m.Message.ClaimId == id).SentAt);
     }
 
     [Fact]
@@ -140,7 +141,9 @@ public class SubmitClaimTests : IClassFixture<ApiFactory>
             var response = await staff.PostAsync($"/claims/{id}/submit", null);
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            await Eventually(() => _factory.Outbox.Messages.Single(m => m.Message.ClaimId == id).Attempts >= 2);
+            await _factory.DispatchEmailsAsync();
+            _factory.Clock.Advance(TimeSpan.FromMinutes(1));   // past the retry back-off
+            await _factory.DispatchEmailsAsync();
             var row = _factory.Outbox.Messages.Single(m => m.Message.ClaimId == id);
             Assert.Null(row.SentAt);
             Assert.Contains("unreachable", row.LastError);
@@ -151,7 +154,9 @@ public class SubmitClaimTests : IClassFixture<ApiFactory>
             _factory.Mailbox.IsDown = false;
         }
 
-        await Eventually(() => _factory.Mailbox.Sent.Any(m => m.ClaimId == id));
+        _factory.Clock.Advance(TimeSpan.FromMinutes(1));
+        await _factory.DispatchEmailsAsync();
+        Assert.Contains(_factory.Mailbox.Sent, m => m.ClaimId == id);
         var fetched = await (await staff.GetAsync($"/claims/{id}")).Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("Submitted", fetched.GetProperty("status").GetString());
     }
@@ -231,16 +236,6 @@ public class SubmitClaimTests : IClassFixture<ApiFactory>
         var response = await adjuster.GetAsync($"/claims/{id}/history");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Single((await response.Content.ReadFromJsonAsync<JsonElement>()).EnumerateArray());
-    }
-
-    private static async Task Eventually(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline) Assert.Fail("Condition was not met within 5 seconds.");
-            await Task.Delay(10);
-        }
     }
 
     [Theory]

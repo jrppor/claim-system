@@ -1,13 +1,11 @@
 using Claim.Api.Auth;
 using Claim.Api.Claims;
 using Claim.Api.Email;
+using Claim.Api.Http;
 using Claim.Api.Users;
 using Claim.Application;
-using Claim.Application.Claims;
 using Claim.Application.Health;
 using Claim.Infrastructure;
-using Microsoft.AspNetCore.Diagnostics;
-using Microsoft.AspNetCore.Mvc;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,6 +16,7 @@ builder.Services.AddApplication(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddEmailOutboxWorker(builder.Configuration);
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddClaimAuth(builder.Configuration);
 builder.Services.AddSwaggerGen(o =>
@@ -33,29 +32,7 @@ builder.Services.AddSwaggerGen(o =>
 
 var app = builder.Build();
 
-app.UseExceptionHandler(errors => errors.Run(async ctx =>
-{
-    var ex = ctx.Features.Get<IExceptionHandlerFeature>()?.Error;
-    var (status, title) = ex switch
-    {
-        ConcurrencyException => (StatusCodes.Status409Conflict, "The Claim was changed by someone else"),
-        InvalidVersionException => (StatusCodes.Status400BadRequest, "Invalid Claim version"),
-        _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred."),
-    };
-    if (ex is not null && status == 500) Log.Error(ex, "Unhandled exception");
-    ctx.Response.StatusCode = status;
-    await ctx.RequestServices.GetRequiredService<IProblemDetailsService>().WriteAsync(new()
-    {
-        HttpContext = ctx,
-        ProblemDetails = new ProblemDetails
-        {
-            Status = status,
-            Title = title,
-            Type = ex is ConcurrencyException ? "urn:claim:version-conflict" : null,   // lets the UI tell this 409 from a forbidden status move
-            Detail = status == 500 ? null : ex!.Message,
-        },
-    });
-}));
+app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseSerilogRequestLogging();
 app.UseCors(AuthSetup.CorsPolicy);

@@ -28,10 +28,15 @@ public static class ClaimLifecycle
 
     /// <summary>
     /// A Repair Estimate revision may be submitted while the Adjuster has not decided yet and is waiting on the garage:
-    /// Submitted (first estimate) or ChangesRequested (revision). Not in Draft (the Claim is not submitted yet),
-    /// not UnderReview (an Adjuster is reading the latest revision) and not once the Claim is decided or closed.
+    /// Submitted (first estimate) or ChangesRequested (revision). Not in Draft (the Claim is not submitted yet), and not once
+    /// the Claim is decided or closed.
+    /// UnderReview is allowed only when no estimate exists yet. Why: an Adjuster may pick a Claim up (Submitted → UnderReview)
+    /// before the garage has sent any estimate; without this exception nobody could ever add one, because Approve needs an
+    /// estimate and the garage could not submit while UnderReview. Once an estimate exists, the Adjuster is reading the latest
+    /// revision, so a change must go through ChangesRequested.
     /// </summary>
-    public static bool AcceptsEstimate(ClaimStatus status) => status is ClaimStatus.Submitted or ClaimStatus.ChangesRequested;
+    public static bool AcceptsEstimate(ClaimStatus status, bool hasEstimate) =>
+        status is ClaimStatus.Submitted or ClaimStatus.ChangesRequested || (status == ClaimStatus.UnderReview && !hasEstimate);
 
     public static IReadOnlyList<ClaimStatus> NextStatuses(ClaimStatus from) => Allowed[from];
 }

@@ -68,7 +68,7 @@ public sealed class FakeClaimRepository : IClaimRepository
         lock (_lock)
         {
             if (!_claims.TryGetValue(claim.Id, out var stored) || !stored.RowVersion.SequenceEqual(claim.RowVersion))
-                throw new ConcurrencyException($"Claim {claim.ClaimNumber} was changed by someone else after it was read.");
+                throw new ConcurrencyException(claim.ClaimNumber);
             claim.RowVersion = NextVersion();
             _claims[claim.Id] = Copy(claim);
         }

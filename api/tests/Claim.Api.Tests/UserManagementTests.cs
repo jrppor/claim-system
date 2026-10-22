@@ -127,6 +127,8 @@ public class UserManagementTests : IClassFixture<ApiFactory>
 
         Assert.Equal(HttpStatusCode.BadRequest, tooShort.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        Assert.Equal("application/problem+json", unknown.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(404, (await unknown.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("status").GetInt32());
     }
 
     [Fact]
