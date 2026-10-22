@@ -21,7 +21,7 @@ public class CancelClaimTests : IClassFixture<ApiFactory>
     {
         var login = await _factory.CreateClient().PostAsJsonAsync("/auth/login", new { email, password = ApiFactory.Password });
         var body = await login.Content.ReadFromJsonAsync<JsonElement>();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateVersionedClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", body.GetProperty("accessToken").GetString());
         return client;

@@ -49,12 +49,6 @@ public sealed class Claim
     /// </summary>
     public byte[] RowVersion { get; set; } = [];
 
-    /// <summary>Pins the version the caller read: the next write fails with a conflict if the Claim has changed since. Null keeps the version just loaded.</summary>
-    public void ExpectVersion(byte[]? version)
-    {
-        if (version is not null) RowVersion = version;
-    }
-
     public Claim(ClaimStatus status, ClaimDetails details, DateTime updatedAt)
     {
         Status = status;
@@ -81,10 +75,12 @@ public sealed class Claim
     }
 
     /// <summary>Refuses a Repair Estimate revision unless the lifecycle accepts one in the current status.</summary>
-    public void EnsureAcceptsEstimate()
+    public void EnsureAcceptsEstimate(bool hasEstimate)
     {
-        if (!ClaimLifecycle.AcceptsEstimate(Status))
-            throw new ClaimRuleException($"Claim {ClaimNumber} is {Status}; a Repair Estimate can only be submitted while it is Submitted or ChangesRequested.");
+        if (!ClaimLifecycle.AcceptsEstimate(Status, hasEstimate))
+            throw new ClaimRuleException(Status == ClaimStatus.UnderReview
+                ? $"Claim {ClaimNumber} is UnderReview and already has a Repair Estimate; a new revision can only be submitted after changes are requested."
+                : $"Claim {ClaimNumber} is {Status}; a Repair Estimate can only be submitted while it is Submitted or ChangesRequested (or UnderReview with none yet).");
     }
 
     /// <summary>Names of the details a Claim still lacks before it may leave Draft.</summary>

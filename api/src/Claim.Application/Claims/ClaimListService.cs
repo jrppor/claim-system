@@ -54,5 +54,7 @@ public sealed class ClaimListService(IClaimListQueries queries)
         return new DashboardSummary(byStatus, byStatus.Values.Sum());
     }
 
+    // Dashboard and list share one rule per role: Garage Staff and Admin (read-only) count every status including Draft;
+    // an Insurance Adjuster never sees a Draft, so Draft is left out of its counts and total (covered by ClaimListTests).
     private static bool ExcludeDrafts(string role) => role == Role.InsuranceAdjuster;
 }

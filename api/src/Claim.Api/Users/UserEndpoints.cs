@@ -1,4 +1,5 @@
 using Claim.Api.Auth;
+using Claim.Api.Http;
 using Claim.Application.Auth;
 using Claim.Domain.Users;
 
@@ -8,6 +9,7 @@ public sealed record CreateUserRequest(string? Email, string? DisplayName, strin
 
 public sealed record ResetPasswordRequest(string? Password);
 
+/// <summary>Admin user management. The Admin UI shows these messages as they are, so this group's messages are Thai (the Claim and Auth groups are English).</summary>
 public static class UserEndpoints
 {
     public static void MapUserEndpoints(this IEndpointRouteBuilder app)
@@ -33,18 +35,21 @@ public static class UserEndpoints
 
         users.MapPost("/{id:long}/disable", async (long id, HttpContext http, UserService service, CancellationToken ct) =>
         {
-            if (http.User.FindFirst("sub")?.Value == id.ToString())
+            if (Actor.From(http.User).UserId == id)
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["id"] = ["ไม่สามารถปิดใช้งานบัญชีของตัวเองได้"] });
-            return await service.DisableAsync(id, ct) ? Results.NoContent() : Results.NotFound();
+            return await service.DisableAsync(id, ct) ? Results.NoContent() : NotFound();
         });
 
         users.MapPost("/{id:long}/reset-password", async (long id, ResetPasswordRequest req, UserService service, CancellationToken ct) =>
         {
             if (PasswordError(req.Password) is { } error)
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["password"] = [error] });
-            return await service.ResetPasswordAsync(id, req.Password!, ct) ? Results.NoContent() : Results.NotFound();
+            return await service.ResetPasswordAsync(id, req.Password!, ct) ? Results.NoContent() : NotFound();
         });
     }
+
+    private static IResult NotFound() =>
+        Results.Problem(title: "ไม่พบข้อมูล", detail: "ไม่พบผู้ใช้นี้", statusCode: StatusCodes.Status404NotFound);
 
     private static string? PasswordError(string? password) =>
         string.IsNullOrEmpty(password) ? "กรุณากรอกรหัสผ่าน"

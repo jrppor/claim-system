@@ -102,7 +102,11 @@ public sealed class SqlClaimRepository(string connectionString) : IClaimReposito
     {
         await using var conn = new SqlConnection(connectionString);
         var row = await conn.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(
-            "SELECT * FROM dbo.Claims WHERE Id = @id", new { id }, cancellationToken: ct));
+            """
+            SELECT Id, ClaimNumber, PolicyId, Status, VehiclePlate, VehicleMake, VehicleModel, CustomerEmail, DamageDescription,
+                   CreatedByUserId, CreatedAt, UpdatedAt, RowVersion, ApprovedAmount, ApprovedRepairEstimateId
+            FROM dbo.Claims WHERE Id = @id
+            """, new { id }, cancellationToken: ct));
         return row?.ToClaim();
     }
 
@@ -123,6 +127,6 @@ public sealed class SqlClaimRepository(string connectionString) : IClaimReposito
                 claim.Details.CustomerEmail, claim.Details.DamageDescription, claim.UpdatedAt,
             }, cancellationToken: ct));
         // No row matched: the Claim was changed (new RowVersion) after the caller read it. A deleted Claim cannot happen (no delete).
-        claim.RowVersion = newVersion ?? throw new ConcurrencyException($"Claim {claim.ClaimNumber} was changed by someone else after it was read.");
+        claim.RowVersion = newVersion ?? throw new ConcurrencyException(claim.ClaimNumber);
     }
 }

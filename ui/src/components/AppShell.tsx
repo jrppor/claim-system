@@ -25,7 +25,6 @@ const navItems: NavItem[] = [
   { label: "รายการเคลม", href: "/claims" },
   { label: "สร้างเคลม", href: "/claims/new" },
   { label: "จัดการผู้ใช้", href: "/users" },
-  { label: "ฟอร์มตัวอย่าง", href: "/sample-form" },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

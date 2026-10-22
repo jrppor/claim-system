@@ -1,4 +1,5 @@
 using Claim.Application.Auth;
+using Claim.Application.Claims;
 using Claim.Application.Health;
 using Claim.Domain.Users;
 using Claim.Infrastructure.Auth;
@@ -6,8 +7,20 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace Claim.Api.Tests;
+
+/// <summary>A clock the test moves by hand, so retry back-off needs no real waiting.</summary>
+public sealed class ManualClock : TimeProvider
+{
+    private DateTimeOffset _now = DateTimeOffset.UtcNow;
+    private readonly object _lock = new();
+
+    public override DateTimeOffset GetUtcNow() { lock (_lock) return _now; }
+
+    public void Advance(TimeSpan by) { lock (_lock) _now += by; }
+}
 
 public sealed class FakeDatabaseProbe : IDatabaseProbe
 {
@@ -128,6 +141,13 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     public FakeRepairEstimateRepository Estimates { get; } = new();
     public FakeInvoiceRepository Invoices { get; } = new();
     public FakeUnitOfWork UnitOfWork { get; }
+    public ManualClock Clock { get; } = new();
+
+    /// <summary>
+    /// One pass of the email sender, run by the test instead of by the background worker (which the test host does not start),
+    /// so what the pass sees depends only on <see cref="Clock"/>.
+    /// </summary>
+    public Task<int> DispatchEmailsAsync() => Services.GetRequiredService<EmailOutboxDispatcher>().DispatchDueAsync(default);
 
     public ApiFactory()
     {
@@ -138,11 +158,17 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         Users.Add("former@claim.test", Password, Role.GarageStaff, isActive: false);
     }
 
+    /// <summary>A client that reads a Claim and sends its version before changing it, like the UI.</summary>
+    public HttpClient CreateVersionedClient() => CreateDefaultClient(new AutoVersionHandler());
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
         builder.ConfigureServices(services =>
         {
+            services.RemoveAll<IHostedService>();
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(Clock);
             services.RemoveAll<IDatabaseProbe>();
             services.AddSingleton<IDatabaseProbe>(Database);
             services.RemoveAll<IUserRepository>();

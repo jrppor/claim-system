@@ -34,13 +34,19 @@ function LoginForm() {
 
   async function onSubmit(values: FormValues) {
     setError(null);
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(values),
-    }).catch(() => null);
+    let response: Response;
+    try {
+      response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+    } catch (error) {
+      console.error("Login request failed", error);
+      return setError("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่อีกครั้ง");
+    }
 
-    if (!response) return setError("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่อีกครั้ง");
+    if (response.status === 502) return setError("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่อีกครั้ง");
     if (response.status === 401) return setError("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
     if (!response.ok) return setError("เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
 

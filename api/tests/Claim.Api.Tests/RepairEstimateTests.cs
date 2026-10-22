@@ -23,7 +23,7 @@ public class RepairEstimateTests : IClassFixture<ApiFactory>
     {
         var login = await _factory.CreateClient().PostAsJsonAsync("/auth/login", new { email, password = ApiFactory.Password });
         var body = await login.Content.ReadFromJsonAsync<JsonElement>();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateVersionedClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", body.GetProperty("accessToken").GetString());
         return client;
@@ -72,7 +72,6 @@ public class RepairEstimateTests : IClassFixture<ApiFactory>
 
     [Theory]
     [InlineData("Draft")]
-    [InlineData("UnderReview")]
     [InlineData("Approved")]
     [InlineData("Rejected")]
     [InlineData("InRepair")]
@@ -91,6 +90,32 @@ public class RepairEstimateTests : IClassFixture<ApiFactory>
         Assert.Contains(status, problem.GetProperty("detail").GetString());
         Assert.DoesNotContain(_factory.Estimates.All, e => e.ClaimId == claim.Id);
         Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
+    }
+
+    [Fact]
+    public async Task A_first_estimate_is_accepted_while_the_claim_is_UnderReview_and_changes_no_status()
+    {
+        var claim = SeedClaim(ClaimStatus.UnderReview);   // an Adjuster picked it up before any estimate existed
+
+        var response = await (await Staff()).PostAsJsonAsync($"/claims/{claim.Id}/estimates", TwoLines());
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(1, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("revision").GetInt32());
+        Assert.Equal(ClaimStatus.UnderReview, _factory.Claims.FindByIdAsync(claim.Id, default).Result!.Status);
+        Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
+    }
+
+    [Fact]
+    public async Task A_second_estimate_is_still_refused_while_the_claim_is_UnderReview()
+    {
+        var claim = SeedClaim(ClaimStatus.UnderReview);
+        _factory.Estimates.Append(new RepairEstimate([new EstimateLine(EstimateLineKind.Part, "กันชน", 1, 100m)])
+            { ClaimId = claim.Id, SubmittedByUserId = 1, SubmittedAt = DateTime.UtcNow });
+
+        var response = await (await Staff()).PostAsJsonAsync($"/claims/{claim.Id}/estimates", TwoLines());
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Single(_factory.Estimates.All, e => e.ClaimId == claim.Id);
     }
 
     [Fact]

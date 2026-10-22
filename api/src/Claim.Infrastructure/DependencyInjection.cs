@@ -13,7 +13,7 @@ public static class DependencyInjection
     {
         var cs = config.GetConnectionString("Claim")
             ?? throw new InvalidOperationException("ConnectionStrings:Claim is not configured.");
-        services.AddSingleton<IDatabaseProbe>(new SqlDatabaseProbe(cs));
+        services.AddSingleton<IDatabaseProbe>(sp => new SqlDatabaseProbe(cs, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SqlDatabaseProbe>>()));
         services.AddSingleton<IUserRepository>(new SqlUserRepository(cs));
         services.AddSingleton<Application.Claims.IPolicyRepository>(new Claims.SqlPolicyRepository(cs));
         services.AddSingleton<Application.Claims.IClaimRepository>(new Claims.SqlClaimRepository(cs));

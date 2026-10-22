@@ -23,7 +23,7 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
     {
         var login = await _factory.CreateClient().PostAsJsonAsync("/auth/login", new { email, password = ApiFactory.Password });
         var body = await login.Content.ReadFromJsonAsync<JsonElement>();
-        var client = _factory.CreateClient();
+        var client = _factory.CreateVersionedClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", body.GetProperty("accessToken").GetString());
         return client;
@@ -164,6 +164,30 @@ public class AdjusterReviewTests : IClassFixture<ApiFactory>
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal(ClaimStatus.Submitted, Stored(submitted).Status);
+    }
+
+    [Fact]
+    public async Task A_state_conflict_is_reported_before_an_invalid_amount()
+    {
+        var submitted = SeedClaim(ClaimStatus.Submitted);
+
+        var response = await (await Adjuster()).PostAsJsonAsync($"/claims/{submitted.Id}/approve", new { approvedAmount = 0m, reason = "ok" });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Garage_can_add_the_estimate_after_the_adjuster_picked_up_a_claim_without_one_and_it_can_then_be_approved()
+    {
+        var claim = SeedClaim(ClaimStatus.Submitted);
+        var adjuster = await Adjuster();
+        await adjuster.PostAsync($"/claims/{claim.Id}/review", null);
+
+        await SubmitEstimate(claim.Id);
+        var response = await adjuster.PostAsJsonAsync($"/claims/{claim.Id}/approve", new { approvedAmount = 5_000m, reason = "ok" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(ClaimStatus.Approved, Stored(claim).Status);
     }
 
     [Fact]
