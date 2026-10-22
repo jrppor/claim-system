@@ -137,10 +137,12 @@ public sealed class FakeUnitOfWork(
     FakeClaimRepository claims, FakeClaimHistoryRepository history, FakeEmailOutbox outbox, FakeRepairEstimateRepository estimates,
     FakeInvoiceRepository invoices, FakeClaimPhotoRepository photos) : IUnitOfWork
 {
-    public async Task<ClaimPhoto> RecordPhotoAsync(ClaimPhoto photo, Domain.Claims.Claim claim, ClaimHistoryEntry entry, CancellationToken ct)
+    public async Task<IReadOnlyList<ClaimPhoto>> RecordPhotosAsync(
+        IReadOnlyList<ClaimPhoto> newPhotos, Domain.Claims.Claim claim, IReadOnlyList<ClaimHistoryEntry> entries, CancellationToken ct)
     {
-        var stored = photos.Append(photo);
-        await RecordStatusChangeAsync(claim, entry, null, ct);
+        // All or nothing, like the real transaction: the rows are only visible once every one of them went in.
+        var stored = photos.AppendAll(newPhotos);
+        for (var i = 0; i < entries.Count; i++) await RecordStatusChangeAsync(claim, entries[i], null, ct);
         return stored;
     }
 

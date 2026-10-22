@@ -15,19 +15,32 @@ namespace Claim.Api.Claims;
 [Tags("Claim Photos")]
 public sealed class ClaimPhotosController(ClaimPhotoService photos) : ControllerBase
 {
-    /// <summary>A little above the 10 MB per-file rule (form overhead), so an oversized file gets the readable 400, not a bare 413.</summary>
-    private const long MaxUploadBytes = 12 * 1024 * 1024;
+    /// <summary>Room for the most a request can legitimately carry: 20 photos of 10 MB plus form overhead.</summary>
+    private const long MaxUploadBytes = 21L * 10 * 1024 * 1024 + 2 * 1024 * 1024;
 
+    /// <summary>
+    /// One or more files (form field "file", repeated). A request with a single file answers with that photo, several answer with
+    /// the list of photos; either way the photos carry the Claim's new version.
+    /// </summary>
     [HttpPost]
     [Authorize(Policy = AuthPolicies.GarageStaff)]
     [RequestSizeLimit(MaxUploadBytes)]
     [RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes)]
-    public async Task<IActionResult> Upload(long id, IFormFile file, CancellationToken ct)
+    public async Task<IActionResult> Upload(long id, [FromForm(Name = "file")] List<IFormFile> files, CancellationToken ct)
     {
         var actor = Actor.From(User);
-        await using var content = file.OpenReadStream();
-        var photo = await photos.UploadAsync(id, file.FileName, file.Length, content, actor.UserId, actor.Role, Request.RequiredVersion(), ct);
-        return photo is null ? this.ClaimNotFound(id) : Created($"/claims/{id}/photos/{photo.Id}/file", photo);
+        var uploads = new List<PhotoUpload>();
+        try
+        {
+            foreach (var file in files) uploads.Add(new PhotoUpload(file.FileName, file.Length, file.OpenReadStream(), null));
+            var created = await photos.UploadAsync(id, uploads, actor.UserId, actor.Role, Request.RequiredVersion(), ct);
+            if (created is null) return this.ClaimNotFound(id);
+            return Created($"/claims/{id}/photos", files.Count == 1 ? created[0] : created);
+        }
+        finally
+        {
+            foreach (var upload in uploads) await upload.Content.DisposeAsync();
+        }
     }
 
     [HttpGet]

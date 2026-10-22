@@ -40,6 +40,19 @@ public class ClaimPhotoTests : IClassFixture<ApiFactory>
         return new MultipartFormDataContent { { file, "file", fileName } };
     }
 
+    private static MultipartFormDataContent UploadMany(params (byte[] Bytes, string Name, string? Caption)[] files)
+    {
+        var form = new MultipartFormDataContent();
+        foreach (var (bytes, name, caption) in files)
+        {
+            var file = new ByteArrayContent(bytes);
+            file.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+            form.Add(file, "file", name);
+            form.Add(new StringContent(caption ?? ""), "caption");
+        }
+        return form;
+    }
+
     [Fact]
     public async Task A_file_named_jpg_whose_bytes_are_not_an_image_is_rejected_with_400_and_stores_nothing()
     {
@@ -277,5 +290,23 @@ public class ClaimPhotoTests : IClassFixture<ApiFactory>
         Assert.Equal("image/jpeg", fetched.Content.Headers.ContentType!.MediaType);
         Assert.Equal("nosniff", fetched.Headers.GetValues("X-Content-Type-Options").Single());
         Assert.Equal(Jpeg, await fetched.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
+    public async Task Several_files_in_one_request_are_all_stored_listed_and_recorded_in_history()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "front.jpg", null), (Jpeg, "rear.jpg", null), (Jpeg, "left.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(["front.jpg", "rear.jpg", "left.jpg"], created.EnumerateArray().Select(p => p.GetProperty("originalFileName").GetString()));
+        var list = await staff.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}/photos");
+        Assert.Equal(3, list.GetArrayLength());
+        Assert.Equal(3, _factory.History.All.Count(e => e.ClaimId == claim.Id));
+        var current = await staff.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}");
+        Assert.All(created.EnumerateArray(), p => Assert.Equal(current.GetProperty("version").GetString(), p.GetProperty("version").GetString()));
     }
 }

@@ -46,7 +46,8 @@ public sealed class FakeClaimPhotoRepository : IClaimPhotoRepository
 
     public IReadOnlyList<ClaimPhoto> All { get { lock (_lock) return _photos.ToList(); } }
 
-    public ClaimPhoto Append(ClaimPhoto photo)
+    /// <summary>Adds every photo or none: when <see cref="FailNextAppend"/> is set, nothing is added and the call throws.</summary>
+    public IReadOnlyList<ClaimPhoto> AppendAll(IReadOnlyList<ClaimPhoto> photos)
     {
         lock (_lock)
         {
@@ -55,8 +56,8 @@ public sealed class FakeClaimPhotoRepository : IClaimPhotoRepository
                 FailNextAppend = false;
                 throw new InvalidOperationException("database failed");
             }
-            var stored = photo.Stored(_photos.Count + 1);
-            _photos.Add(stored);
+            var stored = photos.Select((p, i) => p.Stored(_photos.Count + i + 1)).ToList();
+            _photos.AddRange(stored);
             return stored;
         }
     }
