@@ -30,11 +30,34 @@ import {
 } from "@/lib/claims";
 import { PhotoDeleteButton } from "@/components/PhotoDeleteButton";
 
-/** One photo's bytes, fetched through the authenticated proxy and shown from an object URL. */
-function PhotoImage({ claimId, photo, height }: { claimId: number; photo: ClaimPhoto; height: number | string }) {
+/**
+ * One photo's bytes, fetched through the authenticated proxy and shown from an object URL. The gallery asks for the small
+ * thumbnail (photos stored before thumbnails existed have none, so they fall back to the full image); the viewer asks for the full file.
+ */
+function PhotoImage({
+  claimId,
+  photo,
+  height,
+  variant,
+}: {
+  claimId: number;
+  photo: ClaimPhoto;
+  height: number | string;
+  variant: "thumbnail" | "file";
+}) {
   const file = useQuery({
-    queryKey: ["claim", String(claimId), "photo", photo.id, "file"],
-    queryFn: async () => URL.createObjectURL(await proxyBlob(`/claims/${claimId}/photos/${photo.id}/file`)),
+    queryKey: ["claim", String(claimId), "photo", photo.id, variant],
+    queryFn: async () => {
+      const base = `/claims/${claimId}/photos/${photo.id}`;
+      if (variant === "thumbnail") {
+        try {
+          return URL.createObjectURL(await proxyBlob(`${base}/thumbnail`));
+        } catch {
+          // no thumbnail for this photo: show the full image instead
+        }
+      }
+      return URL.createObjectURL(await proxyBlob(`${base}/file`));
+    },
     staleTime: Infinity,
     gcTime: Infinity,
   });
@@ -136,7 +159,7 @@ export function ClaimPhotoSection({ claim, role }: { claim: ClaimDetail; role: s
           {list.map((p) => (
             <Card key={p.id} variant="outlined">
               <CardActionArea onClick={() => setViewing(p)} aria-label={`ดูรูป ${p.originalFileName}`}>
-                <PhotoImage claimId={claim.id} photo={p} height={120} />
+                <PhotoImage claimId={claim.id} photo={p} height={120} variant="thumbnail" />
               </CardActionArea>
               <Typography variant="caption" color="text.secondary" sx={{ display: "block", px: 1, py: 0.5, overflowWrap: "anywhere" }}>
                 {p.caption ?? p.originalFileName}
@@ -177,7 +200,7 @@ export function ClaimPhotoSection({ claim, role }: { claim: ClaimDetail; role: s
       <Dialog open={viewing !== null} onClose={() => setViewing(null)} maxWidth="lg" fullWidth>
         <DialogTitle>{viewing?.originalFileName}</DialogTitle>
         <DialogContent>
-          {viewing && <PhotoImage claimId={claim.id} photo={viewing} height="auto" />}
+          {viewing && <PhotoImage claimId={claim.id} photo={viewing} height="auto" variant="file" />}
           {viewing?.caption && <Typography sx={{ mt: 1 }}>{viewing.caption}</Typography>}
         </DialogContent>
       </Dialog>

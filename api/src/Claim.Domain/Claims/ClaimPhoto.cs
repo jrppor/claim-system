@@ -16,6 +16,9 @@ public sealed record ClaimPhoto(
 {
     public long Id { get; init; }
 
+    /// <summary>Storage key of the 320 px thumbnail; null for photos stored before thumbnails existed.</summary>
+    public string? ThumbnailStoredName { get; init; }
+
     public ClaimPhoto Stored(long id) => this with { Id = id };
 }
 

@@ -9,6 +9,7 @@ public sealed class ClaimPhotoService(
     IClaimPhotoRepository photos,
     IUnitOfWork unitOfWork,
     IFileStorage storage,
+    PhotoThumbnails thumbnails,
     TimeProvider clock)
 {
     /// <summary>
@@ -58,6 +59,13 @@ public sealed class ClaimPhotoService(
         {
             for (var i = 0; i < drafts.Count; i++)
             {
+                // The thumbnail is built from the verified image; an undecodable file rejects the whole request, naming the file.
+                var thumbnailName = await thumbnails.StoreAsync(uploads[i].Content, drafts[i].ContentType, ct);
+                if (thumbnailName is not null) saved.Add(thumbnailName);
+                if (thumbnailName is null)
+                    throw FileRejected($"{drafts[i].OriginalFileName}: the file is not a readable image.");
+                drafts[i] = drafts[i] with { ThumbnailStoredName = thumbnailName };
+                uploads[i].Content.Position = 0;
                 await storage.SaveAsync(drafts[i].StoredName, uploads[i].Content, ct);
                 saved.Add(drafts[i].StoredName);
             }
@@ -66,6 +74,7 @@ public sealed class ClaimPhotoService(
         }
         catch
         {
+            // Originals and thumbnails stored so far, whatever the failure was (decode, disk or database).
             foreach (var name in saved) await storage.DeleteAsync(name, CancellationToken.None);
             throw;
         }

@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddSingleton<Application.Claims.IClaimPhotoRepository>(new Claims.SqlClaimPhotoRepository(cs));
         var storageRoot = config[$"{Claims.FileStorageOptions.Section}:RootPath"] ?? new Claims.FileStorageOptions().RootPath;
         services.AddSingleton<Application.Claims.IFileStorage>(new Claims.DiskFileStorage(storageRoot));
+        services.AddSingleton<Application.Claims.IThumbnailGenerator, Claims.SkiaThumbnailGenerator>();
         services.AddSingleton<Application.Claims.IUnitOfWork>(new Claims.SqlUnitOfWork(cs));
         services.AddSingleton<Application.Claims.IEmailOutboxStore>(new Claims.SqlEmailOutboxStore(cs));
         services.AddSingleton<Application.Claims.IEmailSender, Email.SmtpEmailSender>();

@@ -126,7 +126,7 @@ public sealed class FakeRefreshTokenStore : IRefreshTokenStore
 }
 
 /// <summary>Test host: real pipeline, in-memory fakes in place of infrastructure.</summary>
-public sealed class ApiFactory : WebApplicationFactory<Program>
+public class ApiFactory : WebApplicationFactory<Program>
 {
     public const string Password = "Passw0rd!demo";
 
@@ -143,6 +143,9 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     public FakeClaimPhotoRepository Photos { get; } = new();
     public FakeFileStorage Files { get; } = new();
     public FakeUnitOfWork UnitOfWork { get; }
+
+    /// <summary>True: thumbnails are made by a fake. A subclass returns false to run the real image library.</summary>
+    protected virtual bool FakeThumbnails => true;
     public ManualClock Clock { get; } = new();
 
     /// <summary>
@@ -182,6 +185,11 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             services.AddSingleton<IClaimPhotoRepository>(Photos);
             services.RemoveAll<IFileStorage>();
             services.AddSingleton<IFileStorage>(Files);
+            if (FakeThumbnails)
+            {
+                services.RemoveAll<IThumbnailGenerator>();
+                services.AddSingleton<IThumbnailGenerator, FakeThumbnailGenerator>();
+            }
             services.ReplaceWorkflowStores(History, UnitOfWork, Outbox, Mailbox, Estimates, Invoices);
         });
     }

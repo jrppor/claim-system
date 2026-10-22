@@ -130,11 +130,11 @@ public sealed class SqlUnitOfWork(string connectionString) : IUnitOfWork
                 var photo = photos[i];
                 var id = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
                     """
-                    INSERT INTO dbo.ClaimPhotos (ClaimId, OriginalFileName, StoredName, ContentType, SizeBytes, Caption, UploadedByUserId, UploadedAt)
+                    INSERT INTO dbo.ClaimPhotos (ClaimId, OriginalFileName, StoredName, ThumbnailStoredName, ContentType, SizeBytes, Caption, UploadedByUserId, UploadedAt)
                     OUTPUT INSERTED.Id
-                    VALUES (@ClaimId, @OriginalFileName, @StoredName, @ContentType, @SizeBytes, @Caption, @UploadedByUserId, @UploadedAt)
+                    VALUES (@ClaimId, @OriginalFileName, @StoredName, @ThumbnailStoredName, @ContentType, @SizeBytes, @Caption, @UploadedByUserId, @UploadedAt)
                     """,
-                    new { photo.ClaimId, photo.OriginalFileName, photo.StoredName, photo.ContentType, photo.SizeBytes, photo.Caption, photo.UploadedByUserId, photo.UploadedAt },
+                    new { photo.ClaimId, photo.OriginalFileName, photo.StoredName, photo.ThumbnailStoredName, photo.ContentType, photo.SizeBytes, photo.Caption, photo.UploadedByUserId, photo.UploadedAt },
                     tx, cancellationToken: ct));
                 // Each history line rewrites the Claim row; the version it returns is the one the next write compares against.
                 await WriteStatusChangeAsync(conn, tx, claim, entries[i], null, ct);
