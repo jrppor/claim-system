@@ -61,6 +61,11 @@ public sealed class FakeClaimPhotoRepository : IClaimPhotoRepository
         }
     }
 
+    public void Remove(long id)
+    {
+        lock (_lock) _photos.RemoveAll(p => p.Id == id);
+    }
+
     public Task<IReadOnlyList<ClaimPhoto>> ListAsync(long claimId, CancellationToken ct)
     {
         lock (_lock) return Task.FromResult<IReadOnlyList<ClaimPhoto>>(_photos.Where(p => p.ClaimId == claimId).ToList());
