@@ -367,4 +367,40 @@ public class ClaimPhotoTests : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.Created, exact.StatusCode);
         Assert.Equal(20, _factory.Photos.All.Count(p => p.ClaimId == claim.Id));
     }
+
+    [Fact]
+    public async Task An_optional_caption_is_saved_trimmed_and_shown_in_the_list_and_a_blank_one_means_none()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos",
+            UploadMany((Jpeg, "front.jpg", "  กันชนหน้าบุบ  "), (Jpeg, "rear.jpg", "   "), (Jpeg, "left.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var list = (await staff.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}/photos")).EnumerateArray().ToList();
+        Assert.Equal("กันชนหน้าบุบ", list[0].GetProperty("caption").GetString());
+        Assert.Equal(JsonValueKind.Null, list[1].GetProperty("caption").ValueKind);
+        Assert.Equal(JsonValueKind.Null, list[2].GetProperty("caption").ValueKind);
+    }
+
+    [Fact]
+    public async Task A_caption_over_200_characters_rejects_the_whole_request_naming_the_file_but_exactly_200_is_accepted()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var filesBefore = _factory.Files.Names.Count;
+
+        var tooLong = await staff.PostAsync($"/claims/{claim.Id}/photos",
+            UploadMany((Jpeg, "ok.jpg", "short"), (Jpeg, "wordy.jpg", new string('ก', 201))));
+
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+        var problem = await tooLong.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Contains("wordy.jpg", problem.GetProperty("errors").GetProperty("caption")[0].GetString());
+        Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
+        Assert.Equal(filesBefore, _factory.Files.Names.Count);
+
+        var exact = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "wordy.jpg", new string('ก', 200))));
+        Assert.Equal(HttpStatusCode.Created, exact.StatusCode);
+    }
 }

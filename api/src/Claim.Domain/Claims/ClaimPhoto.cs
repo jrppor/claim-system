@@ -39,6 +39,16 @@ public static class PhotoFormat
         return null;
     }
 
+    /// <summary>Longest caption, matching the ClaimPhotos.Caption column.</summary>
+    public const int MaxCaptionLength = 200;
+
+    /// <summary>The caption to keep: trimmed, and null when nothing is left.</summary>
+    public static string? NormalizeCaption(string? caption)
+    {
+        var trimmed = caption?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
+    }
+
     public const int MaxFileNameLength = 255;
 
     /// <summary>

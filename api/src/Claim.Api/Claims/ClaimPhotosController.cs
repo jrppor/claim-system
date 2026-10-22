@@ -32,7 +32,10 @@ public sealed class ClaimPhotosController(ClaimPhotoService photos) : Controller
         var uploads = new List<PhotoUpload>();
         try
         {
-            foreach (var file in files) uploads.Add(new PhotoUpload(file.FileName, file.Length, file.OpenReadStream(), null));
+            // Field "caption" is repeated alongside "file" and pairs with it by position; a missing one means no caption.
+            var captions = Request.Form["caption"];
+            for (var i = 0; i < files.Count; i++)
+                uploads.Add(new PhotoUpload(files[i].FileName, files[i].Length, files[i].OpenReadStream(), i < captions.Count ? captions[i] : null));
             var created = await photos.UploadAsync(id, uploads, actor.UserId, actor.Role, Request.RequiredVersion(), ct);
             if (created is null) return this.ClaimNotFound(id);
             return Created($"/claims/{id}/photos", files.Count == 1 ? created[0] : created);

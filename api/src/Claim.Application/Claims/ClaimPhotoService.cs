@@ -35,6 +35,11 @@ public sealed class ClaimPhotoService(
             if (upload.Length > PhotoFormat.MaxBytes)
                 throw FileRejected($"{fileName}: the file is larger than {PhotoFormat.MaxBytes / (1024 * 1024)} MB.");
 
+            var caption = PhotoFormat.NormalizeCaption(upload.Caption);
+            if (caption is { Length: > PhotoFormat.MaxCaptionLength })
+                throw new ClaimValidationException(new Dictionary<string, string[]>
+                    { ["caption"] = [$"{fileName}: the caption is longer than {PhotoFormat.MaxCaptionLength} characters."] });
+
             var header = new byte[PhotoFormat.HeaderLength];
             var read = await upload.Content.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);
             var contentType = PhotoFormat.Detect(header.AsSpan(0, read));
@@ -43,7 +48,7 @@ public sealed class ClaimPhotoService(
             upload.Content.Position = 0;
 
             var storedName = Guid.NewGuid().ToString("N") + PhotoFormat.Extension(contentType);
-            drafts.Add(new ClaimPhoto(claimId, fileName, storedName, contentType, upload.Length, null, actorUserId, now));
+            drafts.Add(new ClaimPhoto(claimId, fileName, storedName, contentType, upload.Length, caption, actorUserId, now));
             entries.Add(claim.RecordPhotoAdded(fileName, actorUserId, now));
         }
 
