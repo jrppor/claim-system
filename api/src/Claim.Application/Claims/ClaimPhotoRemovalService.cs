@@ -9,6 +9,7 @@ public sealed class ClaimPhotoRemovalService(
     IClaimPhotoRepository photos,
     IUnitOfWork unitOfWork,
     IFileStorage storage,
+    PhotoThumbnails thumbnails,
     TimeProvider clock,
     ILogger<ClaimPhotoRemovalService> logger)
 {
@@ -31,6 +32,7 @@ public sealed class ClaimPhotoRemovalService(
         try
         {
             await storage.DeleteAsync(photo.StoredName, CancellationToken.None);
+            await thumbnails.RemoveAsync(photo.ThumbnailStoredName, CancellationToken.None);
         }
         catch (Exception ex)
         {

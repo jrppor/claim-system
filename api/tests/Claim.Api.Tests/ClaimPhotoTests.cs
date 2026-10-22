@@ -86,8 +86,8 @@ public class ClaimPhotoTests : IClassFixture<ApiFactory>
             Assert.Equal(HttpStatusCode.Created, (await staff.PostAsync($"/claims/{claim.Id}/photos", Upload(Jpeg, name))).StatusCode);
 
         var stored = _factory.Files.Names.Except(filesBefore).ToList();
-        Assert.Equal(6, stored.Count);
-        Assert.All(stored, n => Assert.Matches(@"^[0-9a-f]{32}\.jpg$", n));
+        Assert.Equal(12, stored.Count); // six originals and their six thumbnails
+        Assert.All(stored, n => Assert.Matches(@"^[0-9a-f]{32}(_thumb)?\.jpg$", n));
 
         var shown = (await staff.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}/photos")).EnumerateArray()
             .Select(p => p.GetProperty("originalFileName").GetString()).ToList();

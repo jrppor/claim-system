@@ -9,6 +9,7 @@ public sealed class ClaimPhotoService(
     IClaimPhotoRepository photos,
     IUnitOfWork unitOfWork,
     IFileStorage storage,
+    PhotoThumbnails thumbnails,
     TimeProvider clock)
 {
     /// <summary>
@@ -35,20 +36,26 @@ public sealed class ClaimPhotoService(
             throw FileRejected($"{fileName}: only JPEG, PNG and WebP images are accepted.");
         content.Position = 0;
 
+        var thumbnailName = await thumbnails.StoreAsync(content, contentType, ct);
+        if (thumbnailName is null)
+            throw FileRejected($"{fileName}: the file is not a readable image.");
+        content.Position = 0;
+
         var storedName = Guid.NewGuid().ToString("N") + PhotoFormat.Extension(contentType);
         var now = clock.GetUtcNow().UtcDateTime;
-        var draft = new ClaimPhoto(claimId, fileName, storedName, contentType, length, null, actorUserId, now);
+        var draft = new ClaimPhoto(claimId, fileName, storedName, contentType, length, null, actorUserId, now) { ThumbnailStoredName = thumbnailName };
         var entry = claim.RecordPhotoAdded(fileName, actorUserId, now);
 
-        await storage.SaveAsync(storedName, content, ct);
         try
         {
+            await storage.SaveAsync(storedName, content, ct);
             var stored = await unitOfWork.RecordPhotoAsync(draft, claim, entry, ct);
             return ToDto(stored, claim);
         }
         catch
         {
             await storage.DeleteAsync(storedName, CancellationToken.None);
+            await thumbnails.RemoveAsync(thumbnailName, CancellationToken.None);
             throw;
         }
     }
