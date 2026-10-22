@@ -354,6 +354,42 @@ public class ClaimPhotoTests : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Two_uploads_racing_from_19_photos_cannot_both_succeed_so_the_claim_never_passes_20()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await StaffWithPhotos(claim, 19);
+        var version = ClaimVersion.Format((await _factory.Claims.FindByIdAsync(claim.Id, default))!.RowVersion);
+        HttpRequestMessage Request()
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, $"/claims/{claim.Id}/photos") { Content = Upload(Jpeg) };
+            request.Headers.TryAddWithoutValidation("If-Match", $"\"{version}\"");
+            return request;
+        }
+        var plain = _factory.CreateClient();
+        plain.DefaultRequestHeaders.Authorization = staff.DefaultRequestHeaders.Authorization;
+
+        // Hold both requests after they have each counted 19 photos, so both believe there is room for one more.
+        var arrived = 0;
+        var bothCounted = new TaskCompletionSource();
+        _factory.Files.BeforeSave = async () =>
+        {
+            if (Interlocked.Increment(ref arrived) == 2) bothCounted.SetResult();
+            await bothCounted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        };
+        try
+        {
+            var responses = await Task.WhenAll(plain.SendAsync(Request()), plain.SendAsync(Request()));
+
+            Assert.Equal([HttpStatusCode.Created, HttpStatusCode.Conflict], responses.Select(r => r.StatusCode).Order());
+            Assert.Equal(20, _factory.Photos.All.Count(p => p.ClaimId == claim.Id));
+        }
+        finally
+        {
+            _factory.Files.BeforeSave = null;
+        }
+    }
+
+    [Fact]
     public async Task A_request_that_would_go_over_20_is_refused_as_a_whole_but_one_that_reaches_exactly_20_is_accepted()
     {
         var claim = SeedClaim(ClaimStatus.Draft);

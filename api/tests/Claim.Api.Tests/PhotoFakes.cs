@@ -25,8 +25,12 @@ public sealed class FakeFileStorage : IFileStorage
     /// <summary>True: the write that <see cref="FailOnSaveNumber"/> makes fail first leaves a partial file behind, like a disk that filled up mid-write.</summary>
     public bool LeavePartialFileOnFailure { get; set; }
 
+    /// <summary>Awaited at the start of every <see cref="SaveAsync"/>; lets a test hold concurrent uploads at the same point.</summary>
+    public Func<Task>? BeforeSave { get; set; }
+
     public async Task SaveAsync(string name, Stream content, CancellationToken ct)
     {
+        if (BeforeSave is { } hook) await hook();
         if (FailOnSaveNumber is { } n && ++_saves == n)
         {
             FailOnSaveNumber = null;

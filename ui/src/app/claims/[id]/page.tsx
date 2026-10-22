@@ -151,7 +151,8 @@ export default function ClaimDetailPage() {
             {history.data?.map((h, i) => (
               <div key={i}>
                 <Typography>
-                  {h.fromStatus ? `${claimStatusLabels[h.fromStatus]} → ` : ""}
+                  {/* Photo uploads and deletions are recorded with the same status on both sides: show that status once. */}
+                  {h.fromStatus && h.fromStatus !== h.toStatus ? `${claimStatusLabels[h.fromStatus]} → ` : ""}
                   {claimStatusLabels[h.toStatus]}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">

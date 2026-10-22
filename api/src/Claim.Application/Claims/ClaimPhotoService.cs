@@ -31,6 +31,9 @@ public sealed class ClaimPhotoService(
 
         claim.EnsureAcceptsPhotoChange();
         if (files.Count == 0) throw new ClaimValidationException(new Dictionary<string, string[]> { ["file"] = ["Choose at least one image file."] });
+        // The count below is read outside the transaction, so two racing uploads can both see room. That is safe because every
+        // upload sends the Claim's version and RecordPhotosAsync rewrites the Claim row only if that version is still current
+        // (rolling the photo rows back otherwise): of two uploads holding the same version one commits, the other gets a 409.
         // Refuse an oversized batch before the database or any file content is read; the exact count is checked right after.
         claim.EnsureRoomForPhotos(0, files.Count);
         claim.EnsureRoomForPhotos((await photos.ListAsync(claimId, ct)).Count, files.Count);

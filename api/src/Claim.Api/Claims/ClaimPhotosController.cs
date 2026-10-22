@@ -28,7 +28,7 @@ public sealed class ClaimPhotosController(ClaimPhotoService photos) : Controller
     /// </summary>
     [HttpPost]
     [Authorize(Policy = AuthPolicies.GarageStaff)]
-    [RequestSizeLimit(MaxUploadBytes)]
+    [UploadSizeLimit(MaxUploadBytes)]
     [RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes)]
     public async Task<IActionResult> Upload(long id, [FromForm(Name = "file")] List<IFormFile> files, CancellationToken ct)
     {

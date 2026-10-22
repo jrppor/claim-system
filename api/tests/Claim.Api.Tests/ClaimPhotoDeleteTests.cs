@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Claim.Api.Tests;
 
-/// <summary>Deleting a Claim Photo (ticket 03): Garage Staff only, before approval, with If-Match, file and row gone together.</summary>
+/// <summary>Deleting a Claim Photo: Garage Staff only, before approval, with If-Match, file and row gone together.</summary>
 public class ClaimPhotoDeleteTests : IClassFixture<ApiFactory>
 {
     private readonly ApiFactory _factory;

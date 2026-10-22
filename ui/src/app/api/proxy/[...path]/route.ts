@@ -21,7 +21,8 @@ async function forward(request: Request, ctx: Ctx) {
   const target = `${apiBase}/${path.map(encodeURIComponent).join("/")}${search}`;
   // Raw bytes, not text: a multipart upload (Claim Photo) is binary and must reach the API byte for byte, with its
   // original Content-Type (which carries the multipart boundary). Route handlers have no body-size limit of their own;
-  // the API enforces the 10 MB-per-photo rule.
+  // the API enforces the 10 MB-per-photo rule and a request-size cap (413). Known limit: the whole body is buffered in
+  // memory here (up to ~200 MB for a full upload) before it is forwarded; streaming it through is not done.
   const body = ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer();
 
   const jar = await cookies();

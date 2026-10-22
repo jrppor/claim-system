@@ -23,6 +23,8 @@ public sealed class ApiExceptionHandler(IProblemDetailsService problems, ILogger
             ConcurrencyException ex => Problem(StatusCodes.Status409Conflict, "The Claim was changed by someone else", ex.Message, VersionConflictType),
             InvalidVersionException ex => Problem(StatusCodes.Status400BadRequest, "Invalid Claim version", ex.Message),
             VersionRequiredException ex => Problem(StatusCodes.Status428PreconditionRequired, "Claim version required", ex.Message),
+            // Kestrel stops a body that outgrows the limit set by UploadSizeLimit while it is being read (e.g. chunked uploads).
+            BadHttpRequestException { StatusCode: StatusCodes.Status413PayloadTooLarge } => PayloadTooLarge.Problem(null),
             _ => null,
         };
         if (problem is null)
