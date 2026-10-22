@@ -250,6 +250,7 @@ export const invoiceStatuses: readonly ClaimStatus[] = ["InvoiceSubmitted", "Pai
 
 /** Thai message for a failed repair, Invoice or payment action. */
 export function describeRepairError(error: unknown): string {
+  if (isVersionConflict(error)) return versionConflictMessage;
   if (error instanceof ProxyError) {
     if (error.status === 400) return "ยอดใบเรียกเก็บต้องมากกว่า 0 และมีทศนิยมไม่เกิน 2 ตำแหน่ง";
     if (error.status === 409) return "ทำรายการไม่ได้ สถานะของเคลมนี้เปลี่ยนไปแล้ว กรุณารีเฟรชหน้า";

@@ -87,18 +87,19 @@ public sealed class ClaimWorkflowService(
         await DecideAsync(id, ClaimStatus.Rejected, "reason", reason, actorUserId, actorRole, ct, expectedVersion);
 
     /// <summary>Approved → InRepair: the garage begins the repair. Null when the Claim does not exist or the role may not see it.</summary>
-    public async Task<ClaimDto?> StartRepairAsync(long id, long actorUserId, string actorRole, CancellationToken ct) =>
-        await MoveAsync(id, ClaimStatus.InRepair, actorUserId, actorRole, ct);
+    public async Task<ClaimDto?> StartRepairAsync(long id, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null) =>
+        await MoveAsync(id, ClaimStatus.InRepair, actorUserId, actorRole, ct, expectedVersion);
 
     /// <summary>InRepair → Repaired: the work is done and the garage can invoice. Null when the Claim does not exist or the role may not see it.</summary>
-    public async Task<ClaimDto?> MarkRepairedAsync(long id, long actorUserId, string actorRole, CancellationToken ct) =>
-        await MoveAsync(id, ClaimStatus.Repaired, actorUserId, actorRole, ct);
+    public async Task<ClaimDto?> MarkRepairedAsync(long id, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null) =>
+        await MoveAsync(id, ClaimStatus.Repaired, actorUserId, actorRole, ct, expectedVersion);
 
     /// <summary>InvoiceSubmitted → Paid (Closed): the Insurance Adjuster confirms payment. Null when the Claim does not exist or the role may not see it.</summary>
-    public async Task<ClaimDto?> ConfirmPaymentAsync(long id, string? reason, long actorUserId, string actorRole, CancellationToken ct)
+    public async Task<ClaimDto?> ConfirmPaymentAsync(long id, string? reason, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null)
     {
         var claim = await claims.FindByIdAsync(id, ct);
         if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
+        claim.ExpectVersion(expectedVersion);
 
         reason = CleanReason(reason);
         if (reason?.Length > 2000)
@@ -109,10 +110,11 @@ public sealed class ClaimWorkflowService(
     }
 
     /// <summary>Repaired → InvoiceSubmitted with the Invoice of the actual cost. Null when the Claim does not exist or the role may not see it.</summary>
-    public async Task<InvoiceDto?> SubmitInvoiceAsync(long id, InvoiceInput input, long actorUserId, string actorRole, CancellationToken ct)
+    public async Task<InvoiceDto?> SubmitInvoiceAsync(long id, InvoiceInput input, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion = null)
     {
         var claim = await claims.FindByIdAsync(id, ct);
         if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
+        claim.ExpectVersion(expectedVersion);
 
         var note = CleanReason(input.Note);
         var errors = new Dictionary<string, string[]>();
@@ -142,10 +144,11 @@ public sealed class ClaimWorkflowService(
         i.Id, i.ClaimId, i.ActualAmount, claim.ApprovedAmount, claim.ApprovedAmount is { } approved ? i.ActualAmount - approved : null,
         i.Note, i.SubmittedByUserId, i.SubmittedAt);
 
-    private async Task<ClaimDto?> MoveAsync(long id, ClaimStatus to, long actorUserId, string actorRole, CancellationToken ct)
+    private async Task<ClaimDto?> MoveAsync(long id, ClaimStatus to, long actorUserId, string actorRole, CancellationToken ct, byte[]? expectedVersion)
     {
         var claim = await claims.FindByIdAsync(id, ct);
         if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
+        claim.ExpectVersion(expectedVersion);
 
         await ChangeStatusAsync(claim, to, actorUserId, null, ct);
         return await claimService.GetAsync(id, actorRole, ct);

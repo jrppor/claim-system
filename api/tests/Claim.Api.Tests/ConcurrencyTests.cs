@@ -111,12 +111,16 @@ public class ConcurrencyTests : IClassFixture<ApiFactory>
     [InlineData("UnderReview", "approve", "adjuster")]
     [InlineData("Submitted", "cancel", "staff")]
     [InlineData("Draft", "cancel", "staff")]
+    [InlineData("Approved", "start-repair", "staff")]
+    [InlineData("InRepair", "mark-repaired", "staff")]
+    [InlineData("Repaired", "invoice", "staff")]
+    [InlineData("InvoiceSubmitted", "pay", "adjuster")]
     public async Task Every_transition_refuses_a_stale_version_with_409_and_leaves_status_history_and_outbox_untouched(string status, string action, string who)
     {
         var claim = _factory.Claims.Seed(Enum.Parse<ClaimStatus>(status), 1, 1);
         _factory.Estimates.Append(new RepairEstimate([new EstimateLine(EstimateLineKind.Part, "กันชน", 1, 5000m)]) { ClaimId = claim.Id, SubmittedByUserId = 1, SubmittedAt = DateTime.UtcNow });
         var client = who == "staff" ? await Staff() : await Adjuster();
-        var body = new { reason = "เหตุผล", comments = "ความเห็น", approvedAmount = 4000m };
+        var body = new { reason = "เหตุผล", comments = "ความเห็น", approvedAmount = 4000m, actualAmount = 4000m };
 
         var response = await client.SendAsync(With(HttpMethod.Post, $"/claims/{claim.Id}/{action}", Elsewhere, body));
 

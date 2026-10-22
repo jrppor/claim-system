@@ -37,7 +37,7 @@ public sealed class FakeClaimRepository : IClaimRepository
     }
 
     /// <summary>Puts a Claim straight into the store in any status (the lifecycle endpoints arrive in later tickets).</summary>
-    public Domain.Claims.Claim Seed(Domain.Claims.ClaimStatus status, long policyId, long createdByUserId, string plate = "1กก 1234")
+    public Domain.Claims.Claim Seed(Domain.Claims.ClaimStatus status, long policyId, long createdByUserId, string plate = "1กก 1234", decimal? approvedAmount = null)
     {
         lock (_lock)
         {
@@ -51,6 +51,7 @@ public sealed class FakeClaimRepository : IClaimRepository
                 CreatedAt = DateTime.UtcNow,
                 RowVersion = NextVersion(),
             };
+            if (approvedAmount is { } amount) claim.RestoreApproval(amount, 1);
             _claims[id] = claim;
             return Copy(claim);
         }

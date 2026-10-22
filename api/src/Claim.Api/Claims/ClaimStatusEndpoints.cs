@@ -42,18 +42,18 @@ public static class ClaimStatusEndpoints
         }).RequireAuthorization(AuthPolicies.InsuranceAdjuster);
 
         claims.MapPost("/{id:long}/start-repair", async (long id, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
-            await Decide(id, http, ct, (actor, role) => workflow.StartRepairAsync(id, actor, role, ct)))
+            await Decide(id, http, ct, (actor, role) => workflow.StartRepairAsync(id, actor, role, ct, http.Request.ExpectedVersion())))
             .RequireAuthorization(AuthPolicies.GarageStaff);
 
         claims.MapPost("/{id:long}/mark-repaired", async (long id, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
-            await Decide(id, http, ct, (actor, role) => workflow.MarkRepairedAsync(id, actor, role, ct)))
+            await Decide(id, http, ct, (actor, role) => workflow.MarkRepairedAsync(id, actor, role, ct, http.Request.ExpectedVersion())))
             .RequireAuthorization(AuthPolicies.GarageStaff);
 
         claims.MapPost("/{id:long}/invoice", async (long id, InvoiceInput input, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
         {
             try
             {
-                var invoice = await workflow.SubmitInvoiceAsync(id, input, long.Parse(http.User.FindFirst("sub")!.Value), http.User.FindFirst("role")!.Value, ct);
+                var invoice = await workflow.SubmitInvoiceAsync(id, input, long.Parse(http.User.FindFirst("sub")!.Value), http.User.FindFirst("role")!.Value, ct, http.Request.ExpectedVersion());
                 return invoice is null ? NotFound(id) : Results.Created($"/claims/{id}/invoice", invoice);
             }
             catch (ClaimValidationException ex)
@@ -77,7 +77,7 @@ public static class ClaimStatusEndpoints
         claims.MapPost("/{id:long}/pay", async (long id, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>
         {
             var body = await ReadOptionalBody(http, ct);
-            return await Decide(id, http, ct, (actor, role) => workflow.ConfirmPaymentAsync(id, body?.Reason, actor, role, ct));
+            return await Decide(id, http, ct, (actor, role) => workflow.ConfirmPaymentAsync(id, body?.Reason, actor, role, ct, http.Request.ExpectedVersion()));
         }).RequireAuthorization(AuthPolicies.InsuranceAdjuster);
 
         claims.MapPost("/{id:long}/approve", async (long id, ApproveInput input, HttpContext http, ClaimWorkflowService workflow, CancellationToken ct) =>

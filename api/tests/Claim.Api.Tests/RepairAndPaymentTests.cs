@@ -32,11 +32,7 @@ public class RepairAndPaymentTests : IClassFixture<ApiFactory>
     private Task<HttpClient> Admin() => As("admin@claim.test");
 
     private Domain.Claims.Claim Seed(ClaimStatus status, decimal? approved = null)
-    {
-        var claim = _factory.Claims.Seed(status, 1, 1);
-        if (approved is { } amount) claim.RestoreApproval(amount, 1);
-        return claim;
-    }
+        => _factory.Claims.Seed(status, 1, 1, approvedAmount: approved);
 
     private static async Task<string> StatusOf(HttpResponseMessage r) =>
         (await r.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("status").GetString()!;
