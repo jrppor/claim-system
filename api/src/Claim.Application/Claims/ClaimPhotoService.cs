@@ -13,49 +13,69 @@ public sealed class ClaimPhotoService(
     TimeProvider clock)
 {
     /// <summary>
-    /// Stores the file, then the row and its Claim History line in one transaction; if that fails the file is removed again, so
-    /// neither an orphan file nor a half-saved row is left. Returns null when the Claim does not exist or the role may not see it.
+    /// Stores the files, then the rows and their Claim History lines in one transaction; if anything fails the files stored so far
+    /// are removed again, so neither an orphan file nor a half-saved row is left. Every file is checked first and one bad file
+    /// rejects the whole request. Returns null when the Claim does not exist or the role may not see it.
     /// </summary>
-    public async Task<ClaimPhotoDto?> UploadAsync(
-        long claimId, string fileName, long length, Stream content, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct)
+    public async Task<IReadOnlyList<ClaimPhotoDto>?> UploadAsync(
+        long claimId, IReadOnlyList<PhotoUpload> uploads, long actorUserId, string actorRole, byte[] expectedVersion, CancellationToken ct)
     {
         var claim = await claims.FindByIdAsync(claimId, ct);
         if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
         claim.EnsureVersion(expectedVersion);
 
         claim.EnsureAcceptsPhotoChange();
+        if (uploads.Count == 0) throw FileRejected("Choose at least one image file.");
+        claim.EnsureRoomForPhotos((await photos.ListAsync(claimId, ct)).Count, uploads.Count);
 
-        fileName = PhotoFormat.DisplayName(fileName);
-        if (length > PhotoFormat.MaxBytes)
-            throw FileRejected($"{fileName}: the file is larger than {PhotoFormat.MaxBytes / (1024 * 1024)} MB.");
-
-        var header = new byte[PhotoFormat.HeaderLength];
-        var read = await content.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);
-        var contentType = PhotoFormat.Detect(header.AsSpan(0, read));
-        if (contentType is null)
-            throw FileRejected($"{fileName}: only JPEG, PNG and WebP images are accepted.");
-        content.Position = 0;
-
-        var thumbnailName = await thumbnails.StoreAsync(content, contentType, ct);
-        if (thumbnailName is null)
-            throw FileRejected($"{fileName}: the file is not a readable image.");
-        content.Position = 0;
-
-        var storedName = Guid.NewGuid().ToString("N") + PhotoFormat.Extension(contentType);
         var now = clock.GetUtcNow().UtcDateTime;
-        var draft = new ClaimPhoto(claimId, fileName, storedName, contentType, length, null, actorUserId, now) { ThumbnailStoredName = thumbnailName };
-        var entry = claim.RecordPhotoAdded(fileName, actorUserId, now);
+        var drafts = new List<ClaimPhoto>();
+        var entries = new List<ClaimHistoryEntry>();
+        foreach (var upload in uploads)
+        {
+            var fileName = PhotoFormat.DisplayName(upload.FileName);
+            if (upload.Length > PhotoFormat.MaxBytes)
+                throw FileRejected($"{fileName}: the file is larger than {PhotoFormat.MaxBytes / (1024 * 1024)} MB.");
 
+            var caption = PhotoFormat.NormalizeCaption(upload.Caption);
+            if (caption is { Length: > PhotoFormat.MaxCaptionLength })
+                throw new ClaimValidationException(new Dictionary<string, string[]>
+                    { ["caption"] = [$"{fileName}: the caption is longer than {PhotoFormat.MaxCaptionLength} characters."] });
+
+            var header = new byte[PhotoFormat.HeaderLength];
+            var read = await upload.Content.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);
+            var contentType = PhotoFormat.Detect(header.AsSpan(0, read));
+            if (contentType is null)
+                throw FileRejected($"{fileName}: only JPEG, PNG and WebP images are accepted.");
+            upload.Content.Position = 0;
+
+            var storedName = Guid.NewGuid().ToString("N") + PhotoFormat.Extension(contentType);
+            drafts.Add(new ClaimPhoto(claimId, fileName, storedName, contentType, upload.Length, caption, actorUserId, now));
+            entries.Add(claim.RecordPhotoAdded(fileName, actorUserId, now));
+        }
+
+        var saved = new List<string>();
         try
         {
-            await storage.SaveAsync(storedName, content, ct);
-            var stored = await unitOfWork.RecordPhotoAsync(draft, claim, entry, ct);
-            return ToDto(stored, claim);
+            for (var i = 0; i < drafts.Count; i++)
+            {
+                // The thumbnail is built from the verified image; an undecodable file rejects the whole request, naming the file.
+                var thumbnailName = await thumbnails.StoreAsync(uploads[i].Content, drafts[i].ContentType, ct);
+                if (thumbnailName is not null) saved.Add(thumbnailName);
+                if (thumbnailName is null)
+                    throw FileRejected($"{drafts[i].OriginalFileName}: the file is not a readable image.");
+                drafts[i] = drafts[i] with { ThumbnailStoredName = thumbnailName };
+                uploads[i].Content.Position = 0;
+                await storage.SaveAsync(drafts[i].StoredName, uploads[i].Content, ct);
+                saved.Add(drafts[i].StoredName);
+            }
+            var stored = await unitOfWork.RecordPhotosAsync(drafts, claim, entries, ct);
+            return stored.Select(p => ToDto(p, claim)).ToList();
         }
         catch
         {
-            await storage.DeleteAsync(storedName, CancellationToken.None);
-            await thumbnails.RemoveAsync(thumbnailName, CancellationToken.None);
+            // Originals and thumbnails stored so far, whatever the failure was (decode, disk or database).
+            foreach (var name in saved) await storage.DeleteAsync(name, CancellationToken.None);
             throw;
         }
     }

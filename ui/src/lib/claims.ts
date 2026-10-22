@@ -253,12 +253,32 @@ export async function proxyBlob(path: string): Promise<Blob> {
   return await response.blob();
 }
 
+/** Most photos one Claim may hold (mirrors PhotoFormat.MaxPerClaim). */
+export const maxPhotosPerClaim = 20;
+/** Longest photo caption (mirrors PhotoFormat.MaxCaptionLength). */
+export const maxPhotoCaptionLength = 200;
+
+/** The file name the API put in front of its reason ("name.jpg: only JPEG..."), so the user knows which file to fix. */
+function offendingFile(error: ProxyError): string | undefined {
+  const first = Object.values(error.problem?.errors ?? {})[0]?.[0];
+  const cut = first?.indexOf(": ") ?? -1;
+  return first && cut > 0 ? first.slice(0, cut) : undefined;
+}
+
 /** Thai message for a failed photo upload. */
 export function describePhotoUploadError(error: unknown): string {
   if (isVersionConflict(error)) return versionConflictMessage;
   if (error instanceof ProxyError) {
-    if (error.status === 400 || error.status === 413) return "ไฟล์ไม่ถูกต้อง รองรับเฉพาะรูป JPEG, PNG หรือ WebP ขนาดไม่เกิน 10 MB ต่อไฟล์";
-    if (error.status === 409) return "แนบรูปไม่ได้ เพราะสถานะของเคลมนี้ไม่อนุญาตให้เพิ่มรูปแล้ว";
+    if (error.status === 400 || error.status === 413) {
+      const file = error.problem?.errors ? offendingFile(error) : undefined;
+      const which = file ? ` (ไฟล์ ${file})` : "";
+      if (error.problem?.errors?.caption) return `คำอธิบายรูปยาวเกิน ${maxPhotoCaptionLength} ตัวอักษร${which} ไม่มีรูปใดถูกแนบ`;
+      return `ไฟล์ไม่ถูกต้อง${which} รองรับเฉพาะรูป JPEG, PNG หรือ WebP ขนาดไม่เกิน 10 MB ต่อไฟล์ ไม่มีรูปใดถูกแนบ`;
+    }
+    if (error.status === 409) {
+      if (error.problem?.detail?.includes("limit")) return `แนบรูปไม่ได้ เพราะเคลมนี้มีรูปได้ไม่เกิน ${maxPhotosPerClaim} รูป ไม่มีรูปใดถูกแนบ`;
+      return "แนบรูปไม่ได้ เพราะสถานะของเคลมนี้ไม่อนุญาตให้เพิ่มรูปแล้ว";
+    }
     if (error.status === 403) return "คุณไม่มีสิทธิ์แนบรูป";
     if (error.status === 404) return "ไม่พบเคลมนี้";
   }

@@ -16,8 +16,19 @@ public sealed class FakeFileStorage : IFileStorage
         lock (_lock) return _files.TryGetValue(name, out var b) ? b : null;
     }
 
+    private int _saves;
+
+    /// <summary>Makes the Nth <see cref="SaveAsync"/> call from now throw (1 = the next one), as if the disk failed part-way through an upload.</summary>
+    public int? FailOnSaveNumber { get; set; }
+
     public async Task SaveAsync(string name, Stream content, CancellationToken ct)
     {
+        if (FailOnSaveNumber is { } n && ++_saves == n)
+        {
+            FailOnSaveNumber = null;
+            _saves = 0;
+            throw new IOException("disk failed");
+        }
         using var buffer = new MemoryStream();
         await content.CopyToAsync(buffer, ct);
         lock (_lock) _files[name] = buffer.ToArray();
@@ -54,7 +65,10 @@ public sealed class FakeClaimPhotoRepository : IClaimPhotoRepository
 
     public IReadOnlyList<ClaimPhoto> All { get { lock (_lock) return _photos.ToList(); } }
 
-    public ClaimPhoto Append(ClaimPhoto photo)
+    public ClaimPhoto Append(ClaimPhoto photo) => AppendAll([photo])[0];
+
+    /// <summary>Adds every photo or none: when <see cref="FailNextAppend"/> is set, nothing is added and the call throws.</summary>
+    public IReadOnlyList<ClaimPhoto> AppendAll(IReadOnlyList<ClaimPhoto> photos)
     {
         lock (_lock)
         {
@@ -63,8 +77,8 @@ public sealed class FakeClaimPhotoRepository : IClaimPhotoRepository
                 FailNextAppend = false;
                 throw new InvalidOperationException("database failed");
             }
-            var stored = photo.Stored(_photos.Count + 1);
-            _photos.Add(stored);
+            var stored = photos.Select((p, i) => p.Stored(_photos.Count + i + 1)).ToList();
+            _photos.AddRange(stored);
             return stored;
         }
     }

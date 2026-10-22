@@ -27,6 +27,9 @@ public static class PhotoFormat
 {
     public const long MaxBytes = 10 * 1024 * 1024;
 
+    /// <summary>Most photos one Claim may hold.</summary>
+    public const int MaxPerClaim = 20;
+
     /// <summary>Enough leading bytes to tell every supported format apart.</summary>
     public const int HeaderLength = 12;
 
@@ -37,6 +40,16 @@ public static class PhotoFormat
         if (header.StartsWith(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A })) return "image/png";
         if (header.Length >= 12 && header[..4].SequenceEqual("RIFF"u8) && header[8..12].SequenceEqual("WEBP"u8)) return "image/webp";
         return null;
+    }
+
+    /// <summary>Longest caption, matching the ClaimPhotos.Caption column.</summary>
+    public const int MaxCaptionLength = 200;
+
+    /// <summary>The caption to keep: trimmed, and null when nothing is left.</summary>
+    public static string? NormalizeCaption(string? caption)
+    {
+        var trimmed = caption?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
     }
 
     public const int MaxFileNameLength = 255;

@@ -130,6 +130,14 @@ public sealed class Claim
             throw new ClaimRuleException($"Claim {ClaimNumber} is {Status}; Claim Photos can only be changed while it is Draft, Submitted, UnderReview or ChangesRequested.");
     }
 
+    /// <summary>Refuses a request that would take the Claim past <see cref="PhotoFormat.MaxPerClaim"/> photos.</summary>
+    public void EnsureRoomForPhotos(int existing, int adding)
+    {
+        if (existing + adding > PhotoFormat.MaxPerClaim)
+            throw new ClaimRuleException(
+                $"Claim {ClaimNumber} already has {existing} of {PhotoFormat.MaxPerClaim} photos; adding {adding} more would go over the limit.");
+    }
+
     /// <summary>
     /// Claim History line for a Claim Photo that was added. The status stays as it is (From and To are both the current status),
     /// but UpdatedAt moves so the Claim row is rewritten and its version refreshed.

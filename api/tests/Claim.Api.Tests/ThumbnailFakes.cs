@@ -7,8 +7,19 @@ public sealed class FakeThumbnailGenerator : IThumbnailGenerator
 {
     public static byte[] ThumbnailOf(long originalLength) => System.Text.Encoding.ASCII.GetBytes($"THUMB:{originalLength}");
 
+    private int _calls;
+
+    /// <summary>The Nth <see cref="CreateAsync"/> call from now answers "not a decodable image" (1 = the next one).</summary>
+    public int? FailOnCallNumber { get; set; }
+
     public async Task<byte[]?> CreateAsync(Stream image, string contentType, CancellationToken ct)
     {
+        if (FailOnCallNumber is { } n && ++_calls == n)
+        {
+            FailOnCallNumber = null;
+            _calls = 0;
+            return null;
+        }
         using var buffer = new MemoryStream();
         await image.CopyToAsync(buffer, ct);
         return ThumbnailOf(buffer.Length);

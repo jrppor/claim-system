@@ -2,7 +2,9 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Claim.Application.Claims;
 using Claim.Domain.Claims;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Claim.Api.Tests;
 
@@ -38,6 +40,19 @@ public class ClaimPhotoTests : IClassFixture<ApiFactory>
         var file = new ByteArrayContent(bytes);
         file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
         return new MultipartFormDataContent { { file, "file", fileName } };
+    }
+
+    private static MultipartFormDataContent UploadMany(params (byte[] Bytes, string Name, string? Caption)[] files)
+    {
+        var form = new MultipartFormDataContent();
+        foreach (var (bytes, name, caption) in files)
+        {
+            var file = new ByteArrayContent(bytes);
+            file.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+            form.Add(file, "file", name);
+            form.Add(new StringContent(caption ?? ""), "caption");
+        }
+        return form;
     }
 
     [Fact]
@@ -277,5 +292,211 @@ public class ClaimPhotoTests : IClassFixture<ApiFactory>
         Assert.Equal("image/jpeg", fetched.Content.Headers.ContentType!.MediaType);
         Assert.Equal("nosniff", fetched.Headers.GetValues("X-Content-Type-Options").Single());
         Assert.Equal(Jpeg, await fetched.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
+    public async Task Several_files_in_one_request_are_all_stored_listed_and_recorded_in_history()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "front.jpg", null), (Jpeg, "rear.jpg", null), (Jpeg, "left.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(["front.jpg", "rear.jpg", "left.jpg"], created.EnumerateArray().Select(p => p.GetProperty("originalFileName").GetString()));
+        var list = await staff.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}/photos");
+        Assert.Equal(3, list.GetArrayLength());
+        Assert.Equal(3, _factory.History.All.Count(e => e.ClaimId == claim.Id));
+        var current = await staff.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}");
+        Assert.All(created.EnumerateArray(), p => Assert.Equal(current.GetProperty("version").GetString(), p.GetProperty("version").GetString()));
+    }
+
+    [Fact]
+    public async Task One_invalid_file_among_several_rejects_the_whole_request_naming_that_file()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var filesBefore = _factory.Files.Names.Count;
+        var notAnImage = "%PDF-1.7 not a picture"u8.ToArray();
+
+        var response = await (await Staff()).PostAsync($"/claims/{claim.Id}/photos",
+            UploadMany((Jpeg, "good1.jpg", null), (notAnImage, "bad.jpg", null), (Jpeg, "good2.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var reasons = problem.GetProperty("errors").GetProperty("file").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Contains(reasons, r => r!.Contains("bad.jpg"));
+        Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
+        Assert.Equal(filesBefore, _factory.Files.Names.Count);
+        Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
+    }
+
+    private async Task<HttpClient> StaffWithPhotos(Domain.Claims.Claim claim, int count)
+    {
+        var staff = await Staff();
+        var seeded = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany(Enumerable.Range(1, count).Select(i => (Jpeg, $"seed{i}.jpg", (string?)null)).ToArray()));
+        Assert.Equal(HttpStatusCode.Created, seeded.StatusCode);
+        return staff;
+    }
+
+    [Fact]
+    public async Task A_claim_with_20_photos_refuses_another_with_409_and_stores_nothing()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await StaffWithPhotos(claim, 20);
+        var filesBefore = _factory.Files.Names.Count;
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", Upload(Jpeg, "21st.jpg"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(20, _factory.Photos.All.Count(p => p.ClaimId == claim.Id));
+        Assert.Equal(filesBefore, _factory.Files.Names.Count);
+    }
+
+    [Fact]
+    public async Task A_request_that_would_go_over_20_is_refused_as_a_whole_but_one_that_reaches_exactly_20_is_accepted()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await StaffWithPhotos(claim, 18);
+        var filesBefore = _factory.Files.Names.Count;
+
+        var over = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "a.jpg", null), (Jpeg, "b.jpg", null), (Jpeg, "c.jpg", null)));
+        Assert.Equal(HttpStatusCode.Conflict, over.StatusCode);
+        Assert.Equal(18, _factory.Photos.All.Count(p => p.ClaimId == claim.Id));
+        Assert.Equal(filesBefore, _factory.Files.Names.Count);
+
+        var exact = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "a.jpg", null), (Jpeg, "b.jpg", null)));
+        Assert.Equal(HttpStatusCode.Created, exact.StatusCode);
+        Assert.Equal(20, _factory.Photos.All.Count(p => p.ClaimId == claim.Id));
+    }
+
+    [Fact]
+    public async Task An_optional_caption_is_saved_trimmed_and_shown_in_the_list_and_a_blank_one_means_none()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos",
+            UploadMany((Jpeg, "front.jpg", "  กันชนหน้าบุบ  "), (Jpeg, "rear.jpg", "   "), (Jpeg, "left.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var list = (await staff.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}/photos")).EnumerateArray().ToList();
+        Assert.Equal("กันชนหน้าบุบ", list[0].GetProperty("caption").GetString());
+        Assert.Equal(JsonValueKind.Null, list[1].GetProperty("caption").ValueKind);
+        Assert.Equal(JsonValueKind.Null, list[2].GetProperty("caption").ValueKind);
+    }
+
+    [Fact]
+    public async Task A_caption_over_200_characters_rejects_the_whole_request_naming_the_file_but_exactly_200_is_accepted()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var filesBefore = _factory.Files.Names.Count;
+
+        var tooLong = await staff.PostAsync($"/claims/{claim.Id}/photos",
+            UploadMany((Jpeg, "ok.jpg", "short"), (Jpeg, "wordy.jpg", new string('ก', 201))));
+
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+        var problem = await tooLong.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Contains("wordy.jpg", problem.GetProperty("errors").GetProperty("caption")[0].GetString());
+        Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
+        Assert.Equal(filesBefore, _factory.Files.Names.Count);
+
+        var exact = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "wordy.jpg", new string('ก', 200))));
+        Assert.Equal(HttpStatusCode.Created, exact.StatusCode);
+    }
+
+    [Fact]
+    public async Task When_storing_the_second_of_three_files_fails_the_first_is_removed_and_no_row_or_history_is_left()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var filesBefore = _factory.Files.Names.ToHashSet();
+        _factory.Files.FailOnSaveNumber = 2;
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "a.jpg", null), (Jpeg, "b.jpg", null), (Jpeg, "c.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Empty(_factory.Files.Names.Except(filesBefore));
+        Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
+        Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
+    }
+
+    [Fact]
+    public async Task When_saving_the_rows_of_a_multi_file_upload_fails_every_stored_file_is_removed_and_no_row_is_left()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var filesBefore = _factory.Files.Names.ToHashSet();
+        _factory.Photos.FailNextAppend = true;
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "a.jpg", null), (Jpeg, "b.jpg", null), (Jpeg, "c.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Empty(_factory.Files.Names.Except(filesBefore));
+        Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
+        Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
+    }
+
+    [Fact]
+    public async Task Several_files_store_an_original_and_a_thumbnail_each_and_deleting_one_removes_only_its_two_files()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var before = _factory.Files.Names.ToHashSet();
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "a.jpg", null), (Jpeg, "b.jpg", null), (Jpeg, "c.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var rows = _factory.Photos.All.Where(p => p.ClaimId == claim.Id).ToList();
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(6, _factory.Files.Names.Except(before).Count());
+        foreach (var p in rows)
+        {
+            Assert.Contains(p.StoredName, _factory.Files.Names);
+            Assert.NotNull(p.ThumbnailStoredName);
+            Assert.Contains(p.ThumbnailStoredName!, _factory.Files.Names);
+            Assert.Equal(HttpStatusCode.OK, (await staff.GetAsync($"/claims/{claim.Id}/photos/{p.Id}/thumbnail")).StatusCode);
+        }
+
+        var version = (await staff.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}")).GetProperty("version").GetString();
+        var delete = new HttpRequestMessage(HttpMethod.Delete, $"/claims/{claim.Id}/photos/{rows[1].Id}");
+        delete.Headers.TryAddWithoutValidation("If-Match", $"\"{version}\"");
+        Assert.Equal(HttpStatusCode.OK, (await staff.SendAsync(delete)).StatusCode);
+
+        var left = _factory.Files.Names.Except(before).ToList();
+        Assert.Equal(4, left.Count);
+        Assert.DoesNotContain(rows[1].StoredName, left);
+        Assert.DoesNotContain(rows[1].ThumbnailStoredName!, left);
+    }
+
+    [Fact]
+    public async Task A_file_whose_thumbnail_cannot_be_made_rejects_the_whole_request_naming_it_and_leaves_no_files_or_rows()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var before = _factory.Files.Names.ToHashSet();
+        ((FakeThumbnailGenerator)_factory.Services.GetRequiredService<IThumbnailGenerator>()).FailOnCallNumber = 2;
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "ok.jpg", null), (Jpeg, "broken.jpg", null), (Jpeg, "later.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Contains("broken.jpg", problem.GetProperty("errors").GetProperty("file")[0].GetString());
+        Assert.Empty(_factory.Files.Names.Except(before));
+        Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
+        Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
+    }
+
+    [Fact]
+    public async Task A_request_without_any_file_is_400_and_changes_nothing()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var form = new MultipartFormDataContent { { new StringContent("just a caption"), "caption" } };
+
+        var response = await (await Staff()).PostAsync($"/claims/{claim.Id}/photos", form);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
     }
 }
