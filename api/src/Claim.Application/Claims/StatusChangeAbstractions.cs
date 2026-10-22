@@ -19,6 +19,12 @@ public interface IUnitOfWork
 
     /// <summary>Stores the Invoice and moves the Claim to InvoiceSubmitted; Invoice, status, History line and email commit together.</summary>
     Task<Invoice> RecordInvoiceAsync(Invoice invoice, Domain.Claims.Claim claim, ClaimHistoryEntry entry, EmailMessage? email, CancellationToken ct);
+
+    /// <summary>
+    /// Stores a Claim Photo row with its Claim History line. The Claim's status does not change and no email is queued, but the
+    /// Claim row is written (version compared and refreshed) so a stale caller is refused and the photo change is a new version.
+    /// </summary>
+    Task<ClaimPhoto> RecordPhotoAsync(ClaimPhoto photo, Domain.Claims.Claim claim, ClaimHistoryEntry entry, CancellationToken ct);
 }
 
 public interface IClaimHistoryRepository
