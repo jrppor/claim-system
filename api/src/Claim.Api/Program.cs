@@ -1,10 +1,7 @@
 using Claim.Api.Auth;
-using Claim.Api.Claims;
 using Claim.Api.Email;
 using Claim.Api.Http;
-using Claim.Api.Users;
 using Claim.Application;
-using Claim.Application.Health;
 using Claim.Infrastructure;
 using Serilog;
 
@@ -47,20 +44,7 @@ app.UseAuthorization();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.MapGet("/health", async (HealthService health, CancellationToken ct) =>
-{
-    var report = await health.CheckAsync(ct);
-    return report.IsHealthy
-        ? Results.Ok(report)
-        : Results.Problem(title: "Database unavailable", statusCode: StatusCodes.Status503ServiceUnavailable);
-})
-.WithName("Health")
-.WithTags("System");
-
 app.MapControllers();
-app.MapClaimEndpoints();
-app.MapClaimStatusEndpoints();
-app.MapClaimListEndpoints();
 
 app.Run();
 
