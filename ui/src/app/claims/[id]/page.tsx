@@ -23,6 +23,8 @@ import {
 import { RepairEstimateSection } from "@/components/RepairEstimateSection";
 import { CancelClaimAction } from "@/components/CancelClaimAction";
 import { ReviewActions } from "@/components/ReviewActions";
+import { RepairInvoiceActions } from "@/components/RepairInvoiceActions";
+import { InvoiceSection } from "@/components/InvoiceSection";
 import { useSession } from "@/lib/useSession";
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
@@ -89,6 +91,7 @@ export default function ClaimDetailPage() {
           </Button>
         )}
         <ReviewActions claim={c} role={user?.role} />
+        <RepairInvoiceActions claim={c} role={user?.role} />
         <CancelClaimAction claim={c} role={user?.role} />
       </Stack>
       {submit.isError &&<Alert severity="error">{describeStatusChangeError(submit.error)}</Alert>}
@@ -131,6 +134,7 @@ export default function ClaimDetailPage() {
       </Card>
 
       <RepairEstimateSection claim={c} role={user?.role} />
+      <InvoiceSection claim={c} />
 
       <Card>
         <CardContent>

@@ -19,6 +19,7 @@ public static class DependencyInjection
         services.AddSingleton<Application.Claims.IClaimRepository>(new Claims.SqlClaimRepository(cs));
         services.AddSingleton<Application.Claims.IClaimHistoryRepository>(new Claims.SqlClaimHistoryRepository(cs));
         services.AddSingleton<Application.Claims.IRepairEstimateRepository>(new Claims.SqlRepairEstimateRepository(cs));
+        services.AddSingleton<Application.Claims.IInvoiceRepository>(new Claims.SqlInvoiceRepository(cs));
         services.AddSingleton<Application.Claims.IUnitOfWork>(new Claims.SqlUnitOfWork(cs));
         services.AddSingleton<Application.Claims.IEmailOutboxStore>(new Claims.SqlEmailOutboxStore(cs));
         services.AddSingleton<Application.Claims.IEmailSender, Email.SmtpEmailSender>();
