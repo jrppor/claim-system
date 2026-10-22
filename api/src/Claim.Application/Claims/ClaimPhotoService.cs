@@ -22,9 +22,15 @@ public sealed class ClaimPhotoService(
         if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
         claim.EnsureVersion(expectedVersion);
 
+        fileName = PhotoFormat.DisplayName(fileName);
+        if (length > PhotoFormat.MaxBytes)
+            throw FileRejected($"{fileName}: the file is larger than {PhotoFormat.MaxBytes / (1024 * 1024)} MB.");
+
         var header = new byte[PhotoFormat.HeaderLength];
         var read = await content.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);
-        var contentType = PhotoFormat.Detect(header.AsSpan(0, read))!;
+        var contentType = PhotoFormat.Detect(header.AsSpan(0, read));
+        if (contentType is null)
+            throw FileRejected($"{fileName}: only JPEG, PNG and WebP images are accepted.");
         content.Position = 0;
 
         var storedName = Guid.NewGuid().ToString("N") + PhotoFormat.Extension(contentType);
@@ -63,6 +69,9 @@ public sealed class ClaimPhotoService(
         var stream = await storage.OpenReadAsync(photo.StoredName, ct);
         return stream is null ? null : new PhotoFile(stream, photo.ContentType);
     }
+
+    private static ClaimValidationException FileRejected(string reason) =>
+        new(new Dictionary<string, string[]> { ["file"] = [reason] });
 
     private static ClaimPhotoDto ToDto(ClaimPhoto p, ClaimEntity claim) => new(
         p.Id, p.ClaimId, p.OriginalFileName, p.ContentType, p.SizeBytes, p.Caption, p.UploadedByUserId, p.UploadedAt,

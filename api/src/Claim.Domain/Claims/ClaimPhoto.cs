@@ -36,6 +36,24 @@ public static class PhotoFormat
         return null;
     }
 
+    public const int MaxFileNameLength = 255;
+
+    /// <summary>
+    /// The name to show people: only the last path segment, without control characters, at most 255 characters (the extension is kept).
+    /// It is display text only; the stored file is named by a GUID.
+    /// </summary>
+    public static string DisplayName(string? fileName)
+    {
+        var name = fileName ?? "";
+        name = name[(name.LastIndexOfAny(['/', '\\']) + 1)..];
+        name = new string(name.Where(c => !char.IsControl(c)).ToArray()).Trim();
+        if (name.Length == 0) return "photo";
+        if (name.Length <= MaxFileNameLength) return name;
+        var extension = Path.GetExtension(name);
+        if (extension.Length > 10) extension = "";
+        return name[..(MaxFileNameLength - extension.Length)] + extension;
+    }
+
     /// <summary>The extension the stored file gets, derived from the detected type.</summary>
     public static string Extension(string contentType) => contentType switch
     {

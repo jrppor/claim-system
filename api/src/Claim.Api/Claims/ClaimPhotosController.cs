@@ -15,8 +15,13 @@ namespace Claim.Api.Claims;
 [Tags("Claim Photos")]
 public sealed class ClaimPhotosController(ClaimPhotoService photos) : ControllerBase
 {
+    /// <summary>A little above the 10 MB per-file rule (form overhead), so an oversized file gets the readable 400, not a bare 413.</summary>
+    private const long MaxUploadBytes = 12 * 1024 * 1024;
+
     [HttpPost]
     [Authorize(Policy = AuthPolicies.GarageStaff)]
+    [RequestSizeLimit(MaxUploadBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes)]
     public async Task<IActionResult> Upload(long id, IFormFile file, CancellationToken ct)
     {
         var actor = Actor.From(User);
