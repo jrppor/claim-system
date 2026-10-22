@@ -45,6 +45,20 @@ public sealed class SqlRepairEstimateRepository(string connectionString) : IRepa
     }
 }
 
+public sealed class SqlInvoiceRepository(string connectionString) : IInvoiceRepository
+{
+    private sealed record Row(long Id, long ClaimId, decimal ActualAmount, string? Note, long SubmittedByUserId, DateTime SubmittedAt);
+
+    public async Task<Invoice?> FindByClaimAsync(long claimId, CancellationToken ct)
+    {
+        await using var conn = new SqlConnection(connectionString);
+        var r = await conn.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(
+            "SELECT Id, ClaimId, ActualAmount, Note, SubmittedByUserId, SubmittedAt FROM dbo.Invoices WHERE ClaimId = @claimId",
+            new { claimId }, cancellationToken: ct));
+        return r is null ? null : new Invoice(r.ActualAmount, r.Note) { Id = r.Id, ClaimId = r.ClaimId, SubmittedByUserId = r.SubmittedByUserId, SubmittedAt = r.SubmittedAt };
+    }
+}
+
 /// <summary>One SQL transaction per status change: Claims row, ClaimHistory row (and the EmailOutbox row) commit together.</summary>
 public sealed class SqlUnitOfWork(string connectionString) : IUnitOfWork
 {
@@ -89,6 +103,23 @@ public sealed class SqlUnitOfWork(string connectionString) : IUnitOfWork
         if (claim is not null && entry is not null) await WriteStatusChangeAsync(conn, tx, claim, entry, email, ct);
         await tx.CommitAsync(ct);
         return estimate.Stored(id, revision);
+    }
+
+    public async Task<Invoice> RecordInvoiceAsync(Invoice invoice, ClaimEntity claim, ClaimHistoryEntry entry, EmailMessage? email, CancellationToken ct)
+    {
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(ct);
+        var id = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
+            """
+            INSERT INTO dbo.Invoices (ClaimId, ActualAmount, Note, SubmittedByUserId, SubmittedAt)
+            OUTPUT INSERTED.Id
+            VALUES (@ClaimId, @ActualAmount, @Note, @SubmittedByUserId, @SubmittedAt)
+            """,
+            new { invoice.ClaimId, invoice.ActualAmount, invoice.Note, invoice.SubmittedByUserId, invoice.SubmittedAt }, tx, cancellationToken: ct));
+        await WriteStatusChangeAsync(conn, tx, claim, entry, email, ct);
+        await tx.CommitAsync(ct);
+        return invoice.Stored(id);
     }
 
     private static async Task WriteStatusChangeAsync(
