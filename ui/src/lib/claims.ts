@@ -285,7 +285,18 @@ export function describePhotoUploadError(error: unknown): string {
   return "แนบรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
 }
 
-export type RepairAction = "startRepair" | "markRepaired" | "submitInvoice" | "confirmPayment";
+/** Thai message for a failed photo delete. */
+export function describePhotoDeleteError(error: unknown): string {
+  if (isVersionConflict(error)) return versionConflictMessage;
+  if (error instanceof ProxyError) {
+    if (error.status === 409) return "ลบรูปไม่ได้ เพราะสถานะของเคลมนี้ไม่อนุญาตให้ลบรูปแล้ว";
+    if (error.status === 403) return "คุณไม่มีสิทธิ์ลบรูป";
+    if (error.status === 404) return "ไม่พบรูปนี้ อาจถูกลบไปแล้ว";
+  }
+  return "ลบรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+}
+
+export type RepairAction ="startRepair" | "markRepaired" | "submitInvoice" | "confirmPayment";
 
 /**
  * Repair, Invoice and payment actions from role and status (mirrors ClaimLifecycle):

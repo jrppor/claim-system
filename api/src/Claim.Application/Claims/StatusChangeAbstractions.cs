@@ -27,6 +27,9 @@ public interface IUnitOfWork
     /// </summary>
     Task<IReadOnlyList<ClaimPhoto>> RecordPhotosAsync(
         IReadOnlyList<ClaimPhoto> photos, Domain.Claims.Claim claim, IReadOnlyList<ClaimHistoryEntry> entries, CancellationToken ct);
+
+    /// <summary>Deletes a Claim Photo row with its Claim History line in one transaction; the Claim version is compared and refreshed as for an upload.</summary>
+    Task RecordPhotoRemovedAsync(ClaimPhoto photo, Domain.Claims.Claim claim, ClaimHistoryEntry entry, CancellationToken ct);
 }
 
 public interface IClaimHistoryRepository

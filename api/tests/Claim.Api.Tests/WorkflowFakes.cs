@@ -146,6 +146,12 @@ public sealed class FakeUnitOfWork(
         return stored;
     }
 
+    public async Task RecordPhotoRemovedAsync(ClaimPhoto photo, Domain.Claims.Claim claim, ClaimHistoryEntry entry, CancellationToken ct)
+    {
+        photos.Remove(photo.Id);
+        await RecordStatusChangeAsync(claim, entry, null, ct);
+    }
+
     public async Task<Invoice> RecordInvoiceAsync(Invoice invoice, Domain.Claims.Claim claim, ClaimHistoryEntry entry, EmailMessage? email, CancellationToken ct)
     {
         await RecordStatusChangeAsync(claim, entry, email, ct);

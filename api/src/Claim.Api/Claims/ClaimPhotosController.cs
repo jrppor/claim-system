@@ -46,6 +46,18 @@ public sealed class ClaimPhotosController(ClaimPhotoService photos) : Controller
         }
     }
 
+    /// <summary>Removes one photo (row, then file). Garage Staff only; the answer carries the Claim's new version.</summary>
+    [HttpDelete("{photoId:long}")]
+    [Authorize(Policy = AuthPolicies.GarageStaff)]
+    public async Task<IActionResult> Delete(long id, long photoId, [FromServices] ClaimPhotoRemovalService removal, CancellationToken ct)
+    {
+        var actor = Actor.From(User);
+        var version = await removal.RemoveAsync(id, photoId, actor.UserId, actor.Role, Request.RequiredVersion(), ct);
+        return version is null
+            ? this.ProblemResult("Not Found", $"Claim {id} has no photo {photoId}.", StatusCodes.Status404NotFound)
+            : Ok(new { version });
+    }
+
     [HttpGet]
     [Authorize]
     public async Task<IActionResult> List(long id, CancellationToken ct)

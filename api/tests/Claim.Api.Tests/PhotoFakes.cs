@@ -39,8 +39,16 @@ public sealed class FakeFileStorage : IFileStorage
         lock (_lock) return Task.FromResult<Stream?>(_files.TryGetValue(name, out var b) ? new MemoryStream(b) : null);
     }
 
+    /// <summary>Makes the next delete throw, as if the disk refused to remove the file.</summary>
+    public bool FailNextDelete { get; set; }
+
     public Task DeleteAsync(string name, CancellationToken ct)
     {
+        if (FailNextDelete)
+        {
+            FailNextDelete = false;
+            throw new IOException("disk failed");
+        }
         lock (_lock) _files.Remove(name);
         return Task.CompletedTask;
     }
@@ -57,6 +65,8 @@ public sealed class FakeClaimPhotoRepository : IClaimPhotoRepository
 
     public IReadOnlyList<ClaimPhoto> All { get { lock (_lock) return _photos.ToList(); } }
 
+    public ClaimPhoto Append(ClaimPhoto photo) => AppendAll([photo])[0];
+
     /// <summary>Adds every photo or none: when <see cref="FailNextAppend"/> is set, nothing is added and the call throws.</summary>
     public IReadOnlyList<ClaimPhoto> AppendAll(IReadOnlyList<ClaimPhoto> photos)
     {
@@ -70,6 +80,22 @@ public sealed class FakeClaimPhotoRepository : IClaimPhotoRepository
             var stored = photos.Select((p, i) => p.Stored(_photos.Count + i + 1)).ToList();
             _photos.AddRange(stored);
             return stored;
+        }
+    }
+
+    /// <summary>Makes the next <see cref="Remove"/> throw, as if the database failed while deleting a photo row.</summary>
+    public bool FailNextRemove { get; set; }
+
+    public void Remove(long id)
+    {
+        lock (_lock)
+        {
+            if (FailNextRemove)
+            {
+                FailNextRemove = false;
+                throw new InvalidOperationException("database failed");
+            }
+            _photos.RemoveAll(p => p.Id == id);
         }
     }
 

@@ -144,6 +144,18 @@ public sealed class SqlUnitOfWork(string connectionString) : IUnitOfWork
         }, ct);
     }
 
+    public async Task RecordPhotoRemovedAsync(ClaimPhoto photo, ClaimEntity claim, ClaimHistoryEntry entry, CancellationToken ct)
+    {
+        await InTransactionAsync<object?>(async (conn, tx) =>
+        {
+            var deleted = await conn.ExecuteAsync(new CommandDefinition(
+                "DELETE FROM dbo.ClaimPhotos WHERE Id = @Id AND ClaimId = @ClaimId", new { photo.Id, photo.ClaimId }, tx, cancellationToken: ct));
+            if (deleted == 0) throw new InvalidOperationException($"Photo {photo.Id} of Claim {photo.ClaimId} no longer exists.");
+            await WriteStatusChangeAsync(conn, tx, claim, entry, null, ct);
+            return null;
+        }, ct);
+    }
+
     /// <summary>Runs the work in one SQL transaction: committed when it returns, rolled back (by disposal) when it throws.</summary>
     private async Task<T> InTransactionAsync<T>(Func<SqlConnection, SqlTransaction, Task<T>> work, CancellationToken ct)
     {
