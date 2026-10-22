@@ -130,6 +130,130 @@ public class ClaimPhotoTests : IClassFixture<ApiFactory>
         Assert.Equal(filesBefore, _factory.Files.Names.Count);
     }
 
+    [Theory]
+    [InlineData("adjuster@claim.test")]
+    [InlineData("admin@claim.test")]
+    public async Task Only_garage_staff_may_upload_so_other_roles_get_403_and_nothing_is_stored(string email)
+    {
+        var claim = SeedClaim(ClaimStatus.Submitted);
+
+        var response = await (await As(email)).PostAsync($"/claims/{claim.Id}/photos", Upload(Jpeg));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(_factory.Photos.All.Where(p => p.ClaimId == claim.Id));
+    }
+
+    [Fact]
+    public async Task Uploading_without_signing_in_is_401()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+
+        var response = await _factory.CreateClient().PostAsync($"/claims/{claim.Id}/photos", Upload(Jpeg));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Uploading_without_if_match_is_428_and_with_a_stale_version_is_409_version_conflict()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var plain = _factory.CreateClient();
+        plain.DefaultRequestHeaders.Authorization = (await Staff()).DefaultRequestHeaders.Authorization;
+
+        var missing = await plain.PostAsync($"/claims/{claim.Id}/photos", Upload(Jpeg));
+        Assert.Equal(HttpStatusCode.PreconditionRequired, missing.StatusCode);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/claims/{claim.Id}/photos") { Content = Upload(Jpeg) };
+        request.Headers.TryAddWithoutValidation("If-Match", "\"AAAAAAAAAAA=\"");
+        var stale = await plain.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        Assert.Equal("urn:claim:version-conflict", (await stale.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("type").GetString());
+        Assert.Empty(_factory.Photos.All.Where(p => p.ClaimId == claim.Id));
+    }
+
+    [Fact]
+    public async Task An_adjuster_gets_404_on_the_photos_of_a_draft_but_sees_them_once_submitted()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var created = await staff.PostAsync($"/claims/{claim.Id}/photos", Upload(Jpeg));
+        var photoId = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt64();
+        var adjuster = await As("adjuster@claim.test");
+
+        Assert.Equal(HttpStatusCode.NotFound, (await adjuster.GetAsync($"/claims/{claim.Id}/photos")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await adjuster.GetAsync($"/claims/{claim.Id}/photos/{photoId}/file")).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, (await staff.PostAsJsonAsync($"/claims/{claim.Id}/submit", new { })).StatusCode);
+
+        Assert.Single((await adjuster.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}/photos")).EnumerateArray());
+        Assert.Equal(HttpStatusCode.OK, (await adjuster.GetAsync($"/claims/{claim.Id}/photos/{photoId}/file")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Admin_can_view_the_list_and_the_file_but_not_without_signing_in()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var created = await (await Staff()).PostAsync($"/claims/{claim.Id}/photos", Upload(Jpeg));
+        var photoId = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt64();
+        var admin = await As("admin@claim.test");
+
+        Assert.Single((await admin.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}/photos")).EnumerateArray());
+        Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync($"/claims/{claim.Id}/photos/{photoId}/file")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await _factory.CreateClient().GetAsync($"/claims/{claim.Id}/photos/{photoId}/file")).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_photo_of_another_claim_or_that_does_not_exist_is_404()
+    {
+        var mine = SeedClaim(ClaimStatus.Draft);
+        var other = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var created = await staff.PostAsync($"/claims/{mine.Id}/photos", Upload(Jpeg));
+        var photoId = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt64();
+
+        Assert.Equal(HttpStatusCode.NotFound, (await staff.GetAsync($"/claims/{other.Id}/photos/{photoId}/file")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await staff.GetAsync($"/claims/{mine.Id}/photos/99999/file")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await staff.GetAsync("/claims/99999/photos")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Uploading_writes_claim_history_without_changing_status_and_sends_no_email()
+    {
+        var claim = SeedClaim(ClaimStatus.UnderReview);
+        var outboxBefore = _factory.Outbox.Messages.Count;
+        var staff = await Staff();
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", Upload(Jpeg, "front.jpg"));
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var entry = Assert.Single(_factory.History.All, e => e.ClaimId == claim.Id);
+        Assert.Equal(ClaimStatus.UnderReview, entry.FromStatus);
+        Assert.Equal(ClaimStatus.UnderReview, entry.ToStatus);
+        Assert.Equal(_factory.Users.Users.Single(u => u.Email == "staff@claim.test").Id, entry.ActorUserId);
+        Assert.Contains("front.jpg", entry.Reason);
+        Assert.Equal(outboxBefore, _factory.Outbox.Messages.Count);
+        var current = await staff.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}");
+        Assert.Equal("UnderReview", current.GetProperty("status").GetString());
+        // The upload response carries the Claim's new version so the next change can chain from it.
+        Assert.Equal(current.GetProperty("version").GetString(), (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("version").GetString());
+    }
+
+    [Fact]
+    public async Task When_saving_the_row_fails_the_stored_file_is_removed_and_no_row_is_left()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var filesBefore = _factory.Files.Names.ToHashSet();
+        _factory.Photos.FailNextAppend = true;
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", Upload(Jpeg));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Empty(_factory.Files.Names.Except(filesBefore));
+        Assert.Empty(_factory.Photos.All.Where(p => p.ClaimId == claim.Id));
+        Assert.Empty(_factory.History.All.Where(e => e.ClaimId == claim.Id));
+    }
+
     [Fact]
     public async Task Garage_staff_can_upload_a_photo_then_see_it_in_the_list_and_fetch_the_same_bytes()
     {

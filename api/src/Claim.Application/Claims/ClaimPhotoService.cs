@@ -22,6 +22,8 @@ public sealed class ClaimPhotoService(
         if (claim is null || !claim.IsVisibleTo(actorRole)) return null;
         claim.EnsureVersion(expectedVersion);
 
+        claim.EnsureAcceptsPhotoChange();
+
         fileName = PhotoFormat.DisplayName(fileName);
         if (length > PhotoFormat.MaxBytes)
             throw FileRejected($"{fileName}: the file is larger than {PhotoFormat.MaxBytes / (1024 * 1024)} MB.");

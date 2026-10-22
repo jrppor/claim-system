@@ -123,12 +123,20 @@ public sealed class Claim
         return entry;
     }
 
+    /// <summary>Refuses adding or removing a Claim Photo once the lifecycle has locked them.</summary>
+    public void EnsureAcceptsPhotoChange()
+    {
+        if (!ClaimLifecycle.AcceptsPhotoChange(Status))
+            throw new ClaimRuleException($"Claim {ClaimNumber} is {Status}; Claim Photos can only be changed while it is Draft, Submitted, UnderReview or ChangesRequested.");
+    }
+
     /// <summary>
     /// Claim History line for a Claim Photo that was added. The status stays as it is (From and To are both the current status),
     /// but UpdatedAt moves so the Claim row is rewritten and its version refreshed.
     /// </summary>
     public ClaimHistoryEntry RecordPhotoAdded(string fileName, long actorUserId, DateTime now)
     {
+        EnsureAcceptsPhotoChange();
         UpdatedAt = now;
         return new ClaimHistoryEntry(Id, Status, Status, actorUserId, now, $"อัปโหลดรูปความเสียหาย: {fileName}");
     }
