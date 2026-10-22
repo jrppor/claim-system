@@ -9,7 +9,7 @@
 _Avoid_: Case, ticket, เรื่อง
 
 **Policy**:
-กรมธรรม์ประกันของ Customer ที่ระบุรถที่คุ้มครองและวงเงินคุ้มครอง เป็นข้อมูลอ้างอิงที่ Claim ชี้ถึง
+กรมธรรม์ประกันของ Customer ที่ออกโดย Underwriter จาก Quotation ระบุรถที่คุ้มครอง ช่วงคุ้มครอง 1 ปี และวงเงินคุ้มครอง มีสถานะ Active, Expired หรือ Cancelled Claim ชี้ถึง Policy เสมอ
 _Avoid_: Insurance, contract
 
 **Customer**:
@@ -37,8 +37,32 @@ _Avoid_: Quoted price
 _Avoid_: Payout, settled amount
 
 **Coverage Limit**:
-วงเงินคุ้มครองสูงสุดของ Policy ต่อ Claim หนึ่งเรื่อง
+วงเงินคุ้มครองสูงสุดของ Policy ต่อ Claim หนึ่งเรื่อง เท่ากับ Sum Insured ของ Policy นั้นเสมอ
 _Avoid_: Cap, max coverage
+
+**Loss Date**:
+วันที่เกิดเหตุความเสียหายของ Claim ต้องอยู่ในช่วงคุ้มครองของ Policy ที่ยัง Active ณ วันนั้น มิฉะนั้นส่ง Claim ไม่ได้
+_Avoid_: Accident date, incident date
+
+**No-Claim Bonus**:
+ส่วนลดเบี้ยสำหรับ Customer ที่ไม่มี Claim สถานะ Paid ย้อนหลัง 3 ปีในระบบนี้
+_Avoid_: NCB discount, loyalty discount
+
+**Claim Photo**:
+รูปถ่ายความเสียหายที่แนบกับ Claim หนึ่งเรื่อง Garage Staff เป็นผู้แนบ และล็อกเมื่อ Claim ถูก Approved
+_Avoid_: Attachment, image, evidence
+
+**Quotation**:
+ใบเสนอเบี้ยประกันที่ Underwriter คำนวณให้ผู้ขอเอาประกัน ยังไม่คุ้มครองใดๆ จนกว่าจะออกเป็น Policy
+_Avoid_: Quote, ใบเสนอราคา (คำนี้ใช้กับ Repair Estimate)
+
+**Premium**:
+เบี้ยประกันที่ผู้เอาประกันต้องจ่ายตลอดอายุกรมธรรม์ คำนวณจากปัจจัยของรถ ทุนประกัน และผู้ขับขี่
+_Avoid_: Fee, rate
+
+**Sum Insured**:
+มูลค่ารถที่ตกลงเอาประกัน ใช้เป็นฐานคำนวณ Premium
+_Avoid_: Car value, ทุนรถ
 
 ## Roles
 
@@ -49,6 +73,10 @@ _Avoid_: Mechanic, shop user
 **Insurance Adjuster**:
 ผู้ใช้ฝั่งประกัน ทำหน้าที่ตรวจ Repair Estimate แล้วอนุมัติ ปฏิเสธ หรือขอให้แก้ไข และยืนยันการจ่าย
 _Avoid_: Approver, insurer user
+
+**Underwriter**:
+ผู้ใช้ฝั่งประกันที่ทำหน้าที่คำนวณ Premium จัดทำ Quotation และออก Policy ไม่เกี่ยวข้องกับการพิจารณา Claim
+_Avoid_: Agent, salesperson
 
 **Admin**:
 ผู้ใช้ที่จัดการบัญชีผู้ใช้ของระบบ
