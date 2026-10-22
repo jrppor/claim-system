@@ -59,4 +59,33 @@ public class ClaimPhotoThumbnailTests : IClassFixture<ApiFactory>
         Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
         Assert.Equal(FakeThumbnailGenerator.ThumbnailOf(Jpeg.Length), await response.Content.ReadAsByteArrayAsync());
     }
+
+    [Fact]
+    public async Task The_thumbnail_follows_the_full_photos_visibility_adjuster_404_on_draft_admin_read_only_401_without_sign_in()
+    {
+        var draft = _factory.Claims.Seed(ClaimStatus.Draft, 1, 1);
+        var photoId = await UploadPhoto(await Staff(), draft.Id);
+        var url = $"/claims/{draft.Id}/photos/{photoId}/thumbnail";
+
+        Assert.Equal(HttpStatusCode.NotFound, (await (await As("adjuster@claim.test")).GetAsync(url)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await (await As("admin@claim.test")).GetAsync(url)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await _factory.CreateClient().GetAsync(url)).StatusCode);
+
+        // Once submitted the Adjuster may see the Claim, and so its thumbnails.
+        var submit = await (await Staff()).PostAsync($"/claims/{draft.Id}/submit", null);
+        Assert.Equal(HttpStatusCode.OK, submit.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await (await As("adjuster@claim.test")).GetAsync(url)).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_thumbnail_of_a_photo_of_another_claim_or_that_does_not_exist_is_404()
+    {
+        var one = _factory.Claims.Seed(ClaimStatus.Draft, 1, 1);
+        var other = _factory.Claims.Seed(ClaimStatus.Draft, 1, 1);
+        var staff = await Staff();
+        var photoId = await UploadPhoto(staff, one.Id);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await staff.GetAsync($"/claims/{other.Id}/photos/{photoId}/thumbnail")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await staff.GetAsync($"/claims/{one.Id}/photos/9999/thumbnail")).StatusCode);
+    }
 }

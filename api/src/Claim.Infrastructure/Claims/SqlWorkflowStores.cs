@@ -125,11 +125,11 @@ public sealed class SqlUnitOfWork(string connectionString) : IUnitOfWork
         {
             var id = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
                 """
-                INSERT INTO dbo.ClaimPhotos (ClaimId, OriginalFileName, StoredName, ContentType, SizeBytes, Caption, UploadedByUserId, UploadedAt)
+                INSERT INTO dbo.ClaimPhotos (ClaimId, OriginalFileName, StoredName, ThumbnailStoredName, ContentType, SizeBytes, Caption, UploadedByUserId, UploadedAt)
                 OUTPUT INSERTED.Id
-                VALUES (@ClaimId, @OriginalFileName, @StoredName, @ContentType, @SizeBytes, @Caption, @UploadedByUserId, @UploadedAt)
+                VALUES (@ClaimId, @OriginalFileName, @StoredName, @ThumbnailStoredName, @ContentType, @SizeBytes, @Caption, @UploadedByUserId, @UploadedAt)
                 """,
-                new { photo.ClaimId, photo.OriginalFileName, photo.StoredName, photo.ContentType, photo.SizeBytes, photo.Caption, photo.UploadedByUserId, photo.UploadedAt },
+                new { photo.ClaimId, photo.OriginalFileName, photo.StoredName, photo.ThumbnailStoredName, photo.ContentType, photo.SizeBytes, photo.Caption, photo.UploadedByUserId, photo.UploadedAt },
                 tx, cancellationToken: ct));
             await WriteStatusChangeAsync(conn, tx, claim, entry, null, ct);
             return photo.Stored(id);
