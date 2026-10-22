@@ -422,6 +422,25 @@ public class ClaimPhotoTests : IClassFixture<ApiFactory>
         Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
     }
 
+    [Theory]
+    [InlineData(1)] // the thumbnail is the first file written
+    [InlineData(2)] // the original is the second
+    public async Task A_write_that_fails_half_way_and_leaves_a_partial_file_is_cleaned_up_too(int failingWrite)
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var filesBefore = _factory.Files.Names.ToHashSet();
+        _factory.Files.FailOnSaveNumber = failingWrite;
+        _factory.Files.LeavePartialFileOnFailure = true;
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", Upload(Jpeg));
+        _factory.Files.LeavePartialFileOnFailure = false;
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Empty(_factory.Files.Names.Except(filesBefore));
+        Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
+    }
+
     [Fact]
     public async Task When_saving_the_rows_of_a_multi_file_upload_fails_every_stored_file_is_removed_and_no_row_is_left()
     {

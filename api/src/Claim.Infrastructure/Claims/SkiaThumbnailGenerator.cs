@@ -1,4 +1,5 @@
 using Claim.Application.Claims;
+using Claim.Domain.Claims;
 using SkiaSharp;
 
 namespace Claim.Infrastructure.Claims;
@@ -10,25 +11,41 @@ namespace Claim.Infrastructure.Claims;
 /// </summary>
 public sealed class SkiaThumbnailGenerator : IThumbnailGenerator
 {
-    public async Task<byte[]?> CreateAsync(Stream image, string contentType, CancellationToken ct)
+    public async Task<ThumbnailResult> CreateAsync(Stream image, string contentType, CancellationToken ct)
     {
         // Skia takes over (and disposes) the stream it is given, so hand it a copy and leave the caller's stream alone.
         using var copy = new MemoryStream();
         await image.CopyToAsync(copy, ct);
         copy.Position = 0;
-        return Create(copy, contentType);
+        try
+        {
+            return Create(copy, contentType);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The codec can fail by exception too (corrupt data, out of memory); to the uploader that is just an unreadable file.
+            return new ThumbnailResult.Unreadable();
+        }
     }
 
-    private static byte[]? Create(Stream image, string contentType)
+    private static ThumbnailResult Create(Stream image, string contentType)
     {
         using var codec = SKCodec.Create(image);
-        if (codec is null) return null;
+        if (codec is null) return new ThumbnailResult.Unreadable();
+
+        // The header alone says how big the picture is; decide before decoding, which is where the memory goes.
+        var (width, height) = (codec.Info.Width, codec.Info.Height);
+        if (width <= 0 || height <= 0) return new ThumbnailResult.Unreadable();
+        if (width > PhotoFormat.MaxSide || height > PhotoFormat.MaxSide || (long)width * height > PhotoFormat.MaxPixels)
+            return new ThumbnailResult.TooLarge(width, height);
+
         using var decoded = SKBitmap.Decode(codec);
-        if (decoded is null) return null;
+        if (decoded is null) return new ThumbnailResult.Unreadable();
 
         using var upright = Orient(decoded, codec.EncodedOrigin);
         var scale = Math.Min(1.0, (double)IThumbnailGenerator.MaxSide / Math.Max(upright.Width, upright.Height));
         using var sized = scale < 1.0 ? Shrink(upright, scale) : null;
+        if (scale < 1.0 && sized is null) return new ThumbnailResult.Unreadable();
         using var picture = SKImage.FromBitmap(sized ?? upright);
 
         var format = contentType switch
@@ -38,7 +55,7 @@ public sealed class SkiaThumbnailGenerator : IThumbnailGenerator
             _ => SKEncodedImageFormat.Jpeg,
         };
         using var encoded = picture.Encode(format, 80);
-        return encoded?.ToArray();
+        return encoded is null ? new ThumbnailResult.Unreadable() : new ThumbnailResult.Created(encoded.ToArray());
     }
 
     private static SKBitmap? Shrink(SKBitmap source, double scale)

@@ -27,6 +27,12 @@ public static class PhotoFormat
 {
     public const long MaxBytes = 10 * 1024 * 1024;
 
+    /// <summary>Most pixels a photo may declare (width x height). A 10 MB file can legitimately hold far more than a phone camera makes; this stops one that expands to gigabytes.</summary>
+    public const long MaxPixels = 50_000_000;
+
+    /// <summary>Longest width or height a photo may declare, in pixels.</summary>
+    public const int MaxSide = 20_000;
+
     /// <summary>Most photos one Claim may hold.</summary>
     public const int MaxPerClaim = 20;
 

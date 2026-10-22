@@ -22,8 +22,20 @@ public sealed class DiskFileStorage(string rootPath) : IFileStorage
     {
         var path = PathOf(name);
         Directory.CreateDirectory(_root);
-        await using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-        await content.CopyToAsync(file, ct);
+        // CreateNew throws if the name is taken, before anything is written, so the cleanup below can only remove our own file.
+        var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        try
+        {
+            await content.CopyToAsync(file, ct);
+            await file.DisposeAsync();
+        }
+        catch
+        {
+            // A write that dies part-way (source stream, full disk, cancel) must not leave a truncated file under a real name.
+            await file.DisposeAsync();
+            File.Delete(path);
+            throw;
+        }
     }
 
     public Task<Stream?> OpenReadAsync(string name, CancellationToken ct)

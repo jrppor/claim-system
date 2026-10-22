@@ -18,8 +18,7 @@ public sealed class ApiExceptionHandler(IProblemDetailsService problems, ILogger
     {
         var problem = exception switch
         {
-            ClaimValidationException ex => new HttpValidationProblemDetails(ex.Errors.ToDictionary(e => e.Key, e => e.Value))
-                { Status = StatusCodes.Status400BadRequest, Title = "One or more validation errors occurred." },
+            ClaimValidationException ex => Validation(ex),
             ClaimRuleException ex => Problem(StatusCodes.Status409Conflict, "Invalid status change", ex.Message),
             ConcurrencyException ex => Problem(StatusCodes.Status409Conflict, "The Claim was changed by someone else", ex.Message, VersionConflictType),
             InvalidVersionException ex => Problem(StatusCodes.Status400BadRequest, "Invalid Claim version", ex.Message),
@@ -34,6 +33,14 @@ public sealed class ApiExceptionHandler(IProblemDetailsService problems, ILogger
 
         http.Response.StatusCode = problem.Status!.Value;
         return await problems.TryWriteAsync(new ProblemDetailsContext { HttpContext = http, ProblemDetails = problem });
+    }
+
+    private static HttpValidationProblemDetails Validation(ClaimValidationException ex)
+    {
+        var problem = new HttpValidationProblemDetails(ex.Errors.ToDictionary(e => e.Key, e => e.Value))
+            { Status = StatusCodes.Status400BadRequest, Title = "One or more validation errors occurred." };
+        if (ex.FileName is not null) problem.Extensions["fileName"] = ex.FileName;
+        return problem;
     }
 
     private static ProblemDetails Problem(int status, string title, string? detail, string? type = null) =>
