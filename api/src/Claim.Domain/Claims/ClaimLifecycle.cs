@@ -38,6 +38,13 @@ public static class ClaimLifecycle
     public static bool AcceptsEstimate(ClaimStatus status, bool hasEstimate) =>
         status is ClaimStatus.Submitted or ClaimStatus.ChangesRequested || (status == ClaimStatus.UnderReview && !hasEstimate);
 
+    /// <summary>
+    /// Claim Photos can be added or removed until the Claim is Approved: Draft, Submitted, UnderReview and ChangesRequested.
+    /// From Approved on (and when Rejected or Cancelled) the evidence is locked, so it cannot change after the decision.
+    /// </summary>
+    public static bool AcceptsPhotoChange(ClaimStatus status) =>
+        status is ClaimStatus.Draft or ClaimStatus.Submitted or ClaimStatus.UnderReview or ClaimStatus.ChangesRequested;
+
     public static IReadOnlyList<ClaimStatus> NextStatuses(ClaimStatus from) => Allowed[from];
 }
 

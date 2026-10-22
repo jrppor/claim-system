@@ -217,7 +217,80 @@ export async function proxyFetch<T>(path: string, init?: RequestInit): Promise<T
   return (await response.json()) as T;
 }
 
-export type RepairAction = "startRepair" | "markRepaired" | "submitInvoice" | "confirmPayment";
+/** A Claim Photo as the API lists it (metadata only; the bytes come from the file endpoint). */
+export interface ClaimPhoto {
+  id: number;
+  claimId: number;
+  originalFileName: string;
+  contentType: string;
+  sizeBytes: number;
+  caption: string | null;
+  uploadedByUserId: number;
+  uploadedAt: string;
+  /** The Claim's version after this photo was added (upload response only). */
+  version?: string;
+}
+
+/** Statuses in which Claim Photos can be added (mirrors ClaimLifecycle.AcceptsPhotoChange): locked from Approved on. */
+const photoEditableStatuses: ClaimStatus[] = ["Draft", "Submitted", "UnderReview", "ChangesRequested"];
+
+export const canChangePhotos = (role: string | undefined, status: ClaimStatus) => role === "GarageStaff" && photoEditableStatuses.includes(status);
+
+/** Sends a multipart form through the proxy. No Content-Type is set here: the browser adds it with the multipart boundary. */
+export async function proxyUpload<T>(path: string, form: FormData, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api/proxy${path}`, { method: "POST", cache: "no-store", body: form, ...init });
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => undefined)) as ProblemDetails | undefined;
+    throw new ProxyError(response.status, problem);
+  }
+  return (await response.json()) as T;
+}
+
+/** Fetches a file (photo bytes) through the proxy; the token stays in the httpOnly cookie, so it cannot be an <img src>. */
+export async function proxyBlob(path: string): Promise<Blob> {
+  const response = await fetch(`/api/proxy${path}`, { cache: "no-store" });
+  if (!response.ok) throw new ProxyError(response.status);
+  return await response.blob();
+}
+
+/** Most photos one Claim may hold (mirrors PhotoFormat.MaxPerClaim). */
+export const maxPhotosPerClaim = 20;
+/** Longest photo caption (mirrors PhotoFormat.MaxCaptionLength). */
+export const maxPhotoCaptionLength = 200;
+
+/** Thai message for a failed photo upload. */
+export function describePhotoUploadError(error: unknown): string {
+  if (isVersionConflict(error)) return versionConflictMessage;
+  if (error instanceof ProxyError) {
+    if (error.status === 413)
+      return `ไฟล์ที่เลือกมีขนาดรวมใหญ่เกินไป (รวมกันไม่เกินประมาณ ${maxPhotosPerClaim * 10} MB ต่อครั้ง) กรุณาเลือกรูปน้อยลงหรือลดขนาดไฟล์ ไม่มีรูปใดถูกแนบ`;
+    if (error.status === 400) {
+      const which = error.problem?.fileName ? ` (ไฟล์ ${error.problem.fileName})` : "";
+      if (error.problem?.errors?.caption) return `คำอธิบายรูปยาวเกิน ${maxPhotoCaptionLength} ตัวอักษร${which} ไม่มีรูปใดถูกแนบ`;
+      return `ไฟล์ไม่ถูกต้อง${which} รองรับเฉพาะรูป JPEG, PNG หรือ WebP ขนาดไม่เกิน 10 MB ต่อไฟล์ และไม่เกิน 50 ล้านพิกเซล ไม่มีรูปใดถูกแนบ`;
+    }
+    if (error.status === 409) {
+      if (error.problem?.detail?.includes("limit")) return `แนบรูปไม่ได้ เพราะเคลมนี้มีรูปได้ไม่เกิน ${maxPhotosPerClaim} รูป ไม่มีรูปใดถูกแนบ`;
+      return "แนบรูปไม่ได้ เพราะสถานะของเคลมนี้ไม่อนุญาตให้เพิ่มรูปแล้ว";
+    }
+    if (error.status === 403) return "คุณไม่มีสิทธิ์แนบรูป";
+    if (error.status === 404) return "ไม่พบเคลมนี้";
+  }
+  return "แนบรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+}
+
+/** Thai message for a failed photo delete. */
+export function describePhotoDeleteError(error: unknown): string {
+  if (isVersionConflict(error)) return versionConflictMessage;
+  if (error instanceof ProxyError) {
+    if (error.status === 409) return "ลบรูปไม่ได้ เพราะสถานะของเคลมนี้ไม่อนุญาตให้ลบรูปแล้ว";
+    if (error.status === 403) return "คุณไม่มีสิทธิ์ลบรูป";
+    if (error.status === 404) return "ไม่พบรูปนี้ อาจถูกลบไปแล้ว";
+  }
+  return "ลบรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+}
+
+export type RepairAction ="startRepair" | "markRepaired" | "submitInvoice" | "confirmPayment";
 
 /**
  * Repair, Invoice and payment actions from role and status (mirrors ClaimLifecycle):

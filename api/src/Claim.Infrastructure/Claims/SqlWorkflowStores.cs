@@ -119,6 +119,43 @@ public sealed class SqlUnitOfWork(string connectionString) : IUnitOfWork
         }, ct);
     }
 
+    public async Task<IReadOnlyList<ClaimPhoto>> RecordPhotosAsync(
+        IReadOnlyList<ClaimPhoto> photos, ClaimEntity claim, IReadOnlyList<ClaimHistoryEntry> entries, CancellationToken ct)
+    {
+        return await InTransactionAsync<IReadOnlyList<ClaimPhoto>>(async (conn, tx) =>
+        {
+            var stored = new List<ClaimPhoto>();
+            for (var i = 0; i < photos.Count; i++)
+            {
+                var photo = photos[i];
+                var id = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
+                    """
+                    INSERT INTO dbo.ClaimPhotos (ClaimId, OriginalFileName, StoredName, ThumbnailStoredName, ContentType, SizeBytes, Caption, UploadedByUserId, UploadedAt)
+                    OUTPUT INSERTED.Id
+                    VALUES (@ClaimId, @OriginalFileName, @StoredName, @ThumbnailStoredName, @ContentType, @SizeBytes, @Caption, @UploadedByUserId, @UploadedAt)
+                    """,
+                    new { photo.ClaimId, photo.OriginalFileName, photo.StoredName, photo.ThumbnailStoredName, photo.ContentType, photo.SizeBytes, photo.Caption, photo.UploadedByUserId, photo.UploadedAt },
+                    tx, cancellationToken: ct));
+                // Each history line rewrites the Claim row; the version it returns is the one the next write compares against.
+                await WriteStatusChangeAsync(conn, tx, claim, entries[i], null, ct);
+                stored.Add(photo.Stored(id));
+            }
+            return stored;
+        }, ct);
+    }
+
+    public async Task RecordPhotoRemovedAsync(ClaimPhoto photo, ClaimEntity claim, ClaimHistoryEntry entry, CancellationToken ct)
+    {
+        await InTransactionAsync<object?>(async (conn, tx) =>
+        {
+            var deleted = await conn.ExecuteAsync(new CommandDefinition(
+                "DELETE FROM dbo.ClaimPhotos WHERE Id = @Id AND ClaimId = @ClaimId", new { photo.Id, photo.ClaimId }, tx, cancellationToken: ct));
+            if (deleted == 0) throw new InvalidOperationException($"Photo {photo.Id} of Claim {photo.ClaimId} no longer exists.");
+            await WriteStatusChangeAsync(conn, tx, claim, entry, null, ct);
+            return null;
+        }, ct);
+    }
+
     /// <summary>Runs the work in one SQL transaction: committed when it returns, rolled back (by disposal) when it throws.</summary>
     private async Task<T> InTransactionAsync<T>(Func<SqlConnection, SqlTransaction, Task<T>> work, CancellationToken ct)
     {

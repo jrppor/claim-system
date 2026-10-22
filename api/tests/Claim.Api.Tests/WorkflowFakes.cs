@@ -135,8 +135,32 @@ public sealed class FakeInvoiceRepository : IInvoiceRepository
 
 public sealed class FakeUnitOfWork(
     FakeClaimRepository claims, FakeClaimHistoryRepository history, FakeEmailOutbox outbox, FakeRepairEstimateRepository estimates,
-    FakeInvoiceRepository invoices) : IUnitOfWork
+    FakeInvoiceRepository invoices, FakeClaimPhotoRepository photos) : IUnitOfWork
 {
+    public async Task<IReadOnlyList<ClaimPhoto>> RecordPhotosAsync(
+        IReadOnlyList<ClaimPhoto> newPhotos, Domain.Claims.Claim claim, IReadOnlyList<ClaimHistoryEntry> entries, CancellationToken ct)
+    {
+        // All or nothing, like the real transaction: the rows are only visible once every one of them went in.
+        var stored = photos.AppendAll(newPhotos);
+        try
+        {
+            // The first Claim write is the version check; a stale caller fails here, and (as in SQL) its rows must not survive.
+            for (var i = 0; i < entries.Count; i++) await RecordStatusChangeAsync(claim, entries[i], null, ct);
+        }
+        catch
+        {
+            foreach (var photo in stored) photos.Remove(photo.Id);
+            throw;
+        }
+        return stored;
+    }
+
+    public async Task RecordPhotoRemovedAsync(ClaimPhoto photo, Domain.Claims.Claim claim, ClaimHistoryEntry entry, CancellationToken ct)
+    {
+        photos.Remove(photo.Id);
+        await RecordStatusChangeAsync(claim, entry, null, ct);
+    }
+
     public async Task<Invoice> RecordInvoiceAsync(Invoice invoice, Domain.Claims.Claim claim, ClaimHistoryEntry entry, EmailMessage? email, CancellationToken ct)
     {
         await RecordStatusChangeAsync(claim, entry, email, ct);

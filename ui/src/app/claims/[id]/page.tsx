@@ -22,6 +22,7 @@ import {
   type ClaimHistoryEntry,
 } from "@/lib/claims";
 import { RepairEstimateSection } from "@/components/RepairEstimateSection";
+import { ClaimPhotoSection } from "@/components/ClaimPhotoSection";
 import { CancelClaimAction } from "@/components/CancelClaimAction";
 import { ReviewActions } from "@/components/ReviewActions";
 import { RepairInvoiceActions } from "@/components/RepairInvoiceActions";
@@ -134,6 +135,7 @@ export default function ClaimDetailPage() {
         </CardContent>
       </Card>
 
+      <ClaimPhotoSection claim={c} role={user?.role} />
       <RepairEstimateSection claim={c} role={user?.role} />
       <InvoiceSection claim={c} />
 
@@ -149,7 +151,8 @@ export default function ClaimDetailPage() {
             {history.data?.map((h, i) => (
               <div key={i}>
                 <Typography>
-                  {h.fromStatus ? `${claimStatusLabels[h.fromStatus]} → ` : ""}
+                  {/* Photo uploads and deletions are recorded with the same status on both sides: show that status once. */}
+                  {h.fromStatus && h.fromStatus !== h.toStatus ? `${claimStatusLabels[h.fromStatus]} → ` : ""}
                   {claimStatusLabels[h.toStatus]}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
