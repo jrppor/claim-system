@@ -2,7 +2,9 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Claim.Application.Claims;
 using Claim.Domain.Claims;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Claim.Api.Tests;
 
@@ -432,6 +434,56 @@ public class ClaimPhotoTests : IClassFixture<ApiFactory>
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.Empty(_factory.Files.Names.Except(filesBefore));
+        Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
+        Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
+    }
+
+    [Fact]
+    public async Task Several_files_store_an_original_and_a_thumbnail_each_and_deleting_one_removes_only_its_two_files()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var before = _factory.Files.Names.ToHashSet();
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "a.jpg", null), (Jpeg, "b.jpg", null), (Jpeg, "c.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var rows = _factory.Photos.All.Where(p => p.ClaimId == claim.Id).ToList();
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(6, _factory.Files.Names.Except(before).Count());
+        foreach (var p in rows)
+        {
+            Assert.Contains(p.StoredName, _factory.Files.Names);
+            Assert.NotNull(p.ThumbnailStoredName);
+            Assert.Contains(p.ThumbnailStoredName!, _factory.Files.Names);
+            Assert.Equal(HttpStatusCode.OK, (await staff.GetAsync($"/claims/{claim.Id}/photos/{p.Id}/thumbnail")).StatusCode);
+        }
+
+        var version = (await staff.GetFromJsonAsync<JsonElement>($"/claims/{claim.Id}")).GetProperty("version").GetString();
+        var delete = new HttpRequestMessage(HttpMethod.Delete, $"/claims/{claim.Id}/photos/{rows[1].Id}");
+        delete.Headers.TryAddWithoutValidation("If-Match", $"\"{version}\"");
+        Assert.Equal(HttpStatusCode.OK, (await staff.SendAsync(delete)).StatusCode);
+
+        var left = _factory.Files.Names.Except(before).ToList();
+        Assert.Equal(4, left.Count);
+        Assert.DoesNotContain(rows[1].StoredName, left);
+        Assert.DoesNotContain(rows[1].ThumbnailStoredName!, left);
+    }
+
+    [Fact]
+    public async Task A_file_whose_thumbnail_cannot_be_made_rejects_the_whole_request_naming_it_and_leaves_no_files_or_rows()
+    {
+        var claim = SeedClaim(ClaimStatus.Draft);
+        var staff = await Staff();
+        var before = _factory.Files.Names.ToHashSet();
+        ((FakeThumbnailGenerator)_factory.Services.GetRequiredService<IThumbnailGenerator>()).FailOnCallNumber = 2;
+
+        var response = await staff.PostAsync($"/claims/{claim.Id}/photos", UploadMany((Jpeg, "ok.jpg", null), (Jpeg, "broken.jpg", null), (Jpeg, "later.jpg", null)));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Contains("broken.jpg", problem.GetProperty("errors").GetProperty("file")[0].GetString());
+        Assert.Empty(_factory.Files.Names.Except(before));
         Assert.DoesNotContain(_factory.Photos.All, p => p.ClaimId == claim.Id);
         Assert.DoesNotContain(_factory.History.All, e => e.ClaimId == claim.Id);
     }
