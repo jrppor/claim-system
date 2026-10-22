@@ -15,6 +15,11 @@ builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration
 builder.Services.AddApplication(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddEmailOutboxWorker(builder.Configuration);
+builder.Services.AddControllers(o =>
+{
+    // Request DTOs mark optional fields with `?`; the services report what is missing, not the model binder.
+    o.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true;
+});
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddEndpointsApiExplorer();
@@ -52,11 +57,10 @@ app.MapGet("/health", async (HealthService health, CancellationToken ct) =>
 .WithName("Health")
 .WithTags("System");
 
-app.MapAuthEndpoints();
+app.MapControllers();
 app.MapClaimEndpoints();
 app.MapClaimStatusEndpoints();
 app.MapClaimListEndpoints();
-app.MapUserEndpoints();
 
 app.Run();
 
